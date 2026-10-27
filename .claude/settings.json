@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(gh issue *)",
+      "Bash(gh pr *)",
+      "Bash(gh label *)",
+      "Bash(gh api *)",
+      "Bash(gh release *)",
+      "Bash(gh repo *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(jq -r '.tool_input.file_path'); case \"$file\" in *.c|*.h) clang-format -i \"$file\";; esac"
+          }
+        ]
+      }
+    ]
+  }
+}
