@@ -1,0 +1,25 @@
+rules:
+  - id: c-comment-without-workaround-tag
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Comments are only for unexpected workarounds and must start with
+      WORKAROUND: followed by why it is needed. Otherwise rename or
+      restructure the code so it explains itself.
+    paths:
+      include:
+        - "*.c"
+        - "*.h"
+    pattern-regex: '//(?!\s*WORKAROUND:).*|/\*(?!\s*WORKAROUND:)'
+
+  - id: asm-comment-without-workaround-tag
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Comments are only for unexpected workarounds and must start with
+      WORKAROUND: followed by why it is needed. Otherwise use clearer labels
+      and constant names so the code explains itself.
+    paths:
+      include:
+        - "*.asm"
+    pattern-regex: ';(?!\s*WORKAROUND:).*'

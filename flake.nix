@@ -29,7 +29,13 @@
           pkgs.gnumake
           pkgs.qemu
           pkgs.gdb
+          pkgs.clang-tools
+          pkgs.semgrep
         ];
+
+        shellHook = ''
+          git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks
+        '';
       };
     };
 }

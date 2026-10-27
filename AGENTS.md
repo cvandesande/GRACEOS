@@ -15,12 +15,16 @@ GRACEOS is a hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 (38
 - Changing a Decided item means a new entry in the decision log, not a silent edit.
 - Results of a measurement go into the doc and its decision log. Issues only point to them.
 - Never use leaked or disassembled Microsoft code. GPL and Microsoft code are behaviour references only.
+- The project is MIT only. Do not add, vendor or ship code or software under an incompatible licence. If a component needs one, say so and propose writing our own.
 
 ## Conventions from the plan
 
 - Assembly (NASM) for boot, mode switches, interrupt entry, context switching and fast paths; strict C11 for everything else (`-std=c11 -ffreestanding -nostdlib -Wall -Wextra -Werror`).
 - One kernel image for every CPU configuration, built for the plain 386. Do not use 486-only instructions (cmpxchg, xadd, invlpg, bswap and so on) outside paths guarded by boot-time CPU detection.
 - Nothing may rule out the 386SX: work within 16MB and 24-bit addresses, with no reliance on an FPU.
+- Code need not be perfect, but it must be simple and easy to read. Prefer small designs with few options. Do not add configurability, abstraction layers or negotiation until a measurement or a concrete need justifies it. The in-kernel or IPC experiment harness is the deliberate exception. This is a Decided principle in `docs/design.md`.
+- Keep code compiler-neutral: strict C11 that builds with both GCC and Clang, with no extensions beyond inline assembly and attributes both accept. GCC is the primary compiler. As code lands, also build with Clang and compare the generated assembly and speed.
+- Names must be self-explanatory: functions, variables, constants, enums and types. If code seems to need a comment, rename or restructure it first. A comment is the exception, only for an unexpected workaround, and it says why the workaround is needed. Never write comments that restate what the code does.
 - Serial console on COM1 and port 80h progress codes from the start.
 - The 386 has no cycle counter. Benchmarks use the 8254 timer.
 
@@ -30,7 +34,8 @@ GRACEOS is a hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 (38
 - Labels: `decided`, `proposed`, `to-measure`.
 - Put `Closes #N` in a commit message to close an issue.
 - Tag each passed phase gate, for example `phase1-serial-boot`.
-- No CI exists yet. Benchmark results are planned for a `results/` directory, one folder per CPU configuration.
+- There is no CI. The pre-commit hook in `.githooks/` enforces the rules: `clang-tidy` (config in `.clang-tidy`) for naming and readability, and Semgrep (rules in `.semgrep/`) for the comment rule. The dev shell activates the hook. Fix violations; never bypass it with `--no-verify`. Comments in code must start with `WORKAROUND:`.
+- Benchmark results are planned for a `results/` directory, one folder per CPU configuration.
 
 ## Working style
 

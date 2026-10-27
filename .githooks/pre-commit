@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+mapfile -d '' -t staged_c_files < <(git diff --cached -z --name-only --diff-filter=ACM -- '*.c' '*.h')
+mapfile -d '' -t staged_files < <(git diff --cached -z --name-only --diff-filter=ACM)
+
+any_check_failed=0
+
+if [ "${#staged_c_files[@]}" -gt 0 ]; then
+    # WORKAROUND: the Nix clang-tidy wrapper puts host glibc headers ahead of the freestanding ones
+    clang-tidy-unwrapped --quiet "${staged_c_files[@]}" -- \
+        --target=i386-none-elf -march=i386 -std=c11 -ffreestanding -nostdlibinc -Isrc \
+        || any_check_failed=1
+fi
+
+if [ "${#staged_files[@]}" -gt 0 ]; then
+    semgrep --config .semgrep --error --quiet --metrics=off --disable-version-check \
+        "${staged_files[@]}" \
+        || any_check_failed=1
+fi
+
+exit "$any_check_failed"

@@ -53,10 +53,11 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 | 386SX compatibility | Keep it possible: everything must work within 16MB of physical memory and 24-bit addresses; ISA-only cards must work, with VLB an optional speed-up; no reliance on an FPU; memory budgets fit 16MB | The 386SX is the same CPU inside, with a 16-bit bus and 16MB limit, so keeping these rules costs little |
 | Kernel image | One image for every configuration, built for the plain 386, with 486 features enabled at boot | The same disk works in every configuration |
 | Languages | Assembly (NASM) for boot, mode switches, interrupt entry, context switching and fast paths; strict C for everything else | Learn the CPU first-hand, with C's structure where it helps |
-| Licence | Permissive (MIT or BSD), written from scratch; GPL and Microsoft code used only as behaviour references | Freedom to share, no tainted code |
+| Licence | MIT only, written from scratch. Nothing shipped may carry an incompatible licence; GPL and Microsoft code used only as behaviour references. Where a component would force one, write our own (a shell, for example) | Freedom to share, no tainted code |
 | Debugging | Serial console on COM1 and port 80h progress codes from day one | Both work before anything else does |
 | Development | NixOS flake dev shell; QEMU, Bochs and 86Box before real hardware | Reproducible toolchain |
 | Dedication | Andrew Tanenbaum and Linus Torvalds, printed in the boot messages | Their 1992 debate is the question this project tests |
+| Design principle | Code need not be perfect, but it must be simple and easy to read. Small designs with few options: no configurability, abstraction layers or negotiation until a measurement or a concrete need justifies them | Simple code can be read and audited end to end, and fixed choices leave nothing to misconfigure; imperfect code that is easy to read can be fixed, while clever code cannot. WireGuard, a few thousand lines with one fixed set of cryptographic primitives, is the model. The experiment harness is the deliberate exception, since it exists to measure |
 
 ### Target hardware
 
@@ -87,8 +88,10 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 ### Strict C
 
 - `-std=c11 -ffreestanding -nostdlib -Wall -Wextra -Werror`, plus GCC's `-fanalyzer` or Clang's static analyzer.
+- Code stays compiler-neutral: strict C11 that builds with both GCC and Clang, with no extensions beyond inline assembly and attributes both accept. GCC is the primary compiler; build with Clang too as code lands and compare the generated assembly and speed on the target.
 - Kernel logic and services also compile as ordinary programs on the host, run under AddressSanitizer and UndefinedBehaviorSanitizer.
 - Buffers passed as pointer-and-length pairs with bounds checked in one place; one documented owner for every object; distinct types for physical and virtual addresses; assertions for invariants in debug builds.
+- Names carry the meaning: functions, variables, constants, enums and types explain themselves, so the code reads without comments. A comment is the exception, written only for an unexpected workaround, and it says why the workaround is needed.
 - Read the generated assembly (`gcc -S` or Compiler Explorer) to keep learning how C maps onto the machine.
 - Open Watcom for 16-bit pieces near the end (Windows `.DRV` drivers, DOS stubs). Rust stays an option for individual services later.
 
@@ -300,6 +303,11 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-24 | DOS attributes stored in ext3 extended attributes |
 | 2026-10-25 | Kernel style: hybrid, with each service's placement decided by measurement. Document restructured into decisions, experiments, hypotheses and proposals |
 | 2026-10-25 | 386SX support is a stretch goal; no decision may rule it out. The 286 is out of scope, since it lacks paging, V86 mode and 32-bit registers |
+| 2026-10-27 | Project named GRACEOS. Design principle: code need not be perfect but must be simple and easy to read; small designs with few options, and no configurability, abstraction layers or negotiation without a measurement or a concrete need |
+| 2026-10-27 | Commenting rule: self-explanatory names for functions, variables, constants, enums and types; comments only for an unexpected workaround, saying why it is needed |
+| 2026-10-27 | Rules enforced by pre-commit hooks, not CI: clang-tidy for naming and readability, Semgrep for custom rules such as comments (comments must start with `WORKAROUND:`) |
+| 2026-10-27 | Code stays compiler-neutral (GCC and Clang); GCC is the primary compiler and Clang builds are compared as code lands |
+| 2026-10-27 | Licence narrowed from MIT or BSD to MIT only. No shipped code or software with an incompatible licence; if that rules out a component, such as BusyBox, write our own |
 
 ## Glossary
 
