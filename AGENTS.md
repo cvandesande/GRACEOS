@@ -27,10 +27,78 @@ GRACEOS is a hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 (38
 - Keep C compiler-neutral: it must build with both GCC and Clang, with no extensions beyond inline assembly, attributes and the keyword spellings in `src/compat.h` that both accept. GCC is the primary compiler. Build with Clang too (`make clang`) and compare the generated assembly and speed.
 - One kernel image for every CPU configuration, built for the plain 386. Do not use 486-only instructions (cmpxchg, xadd, invlpg, bswap and so on) outside paths guarded by boot-time CPU detection.
 - Nothing may rule out the 386SX: work within 16MB and 24-bit addresses, with no reliance on an FPU.
+- Atomics on the 386 briefly disable interrupts, or use `lock inc` and `lock dec` with the CPU flags. There is no `cmpxchg` or `xadd` before the 486.
+- No floating point in the kernel or services; the 386 may have no FPU. Build with `-mgeneral-regs-only`.
 - The 386 has no cycle counter. Benchmarks use the 8254 timer.
+- Never use port 80h as an I/O delay: it carries the POST card's progress codes.
 - Emit port 80h progress codes and serial output on COM1 at each boot stage.
 - Code need not be perfect, but it must be simple and easy to read. Prefer small designs with few options. Do not add configurability, abstraction layers or negotiation until a measurement or a concrete need justifies it. The in-kernel or IPC experiment harness is the deliberate exception.
 - Names must be self-explanatory: functions, variables, constants, enums and types. If code seems to need a comment, rename or restructure it first. A comment is the exception, and it starts with a tag (`/* ` in C, since `//` is not C89; `; ` in assembly): `WORKAROUND:` for an unexpected workaround, saying why it is needed, or `WHY:` for a fact a name cannot carry, such as a hardware behaviour, an ordering constraint or a datasheet reference.
+
+## Robust C
+
+Flight-software style: the code should fail loudly and early, and never silently. These rules sit on top of the code conventions above, and the same hook and builds enforce what they can.
+
+- **Errors**: a function that can fail returns `int`, 0 for success and a negative error code on failure (`-E_NOMEM`, `-E_IO`). Mark it `MUST_CHECK`. Results come back through pointer parameters, not through the status code. A function returns `void` only when failure is impossible or meaningless, such as writing a character to the serial port.
+- **Check every return value.** To ignore one on purpose, use `IGNORE_RESULT(...)` with a `WHY:` comment. A plain `(void)` cast does not silence `warn_unused_result` in GCC. Both macros belong in `src/compat.h`, with an empty fallback for compilers that lack the attribute (GCC before 3.4):
+
+```c
+#if defined(__GNUC__) && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4))
+#define MUST_CHECK __attribute__((warn_unused_result))
+#else
+#define MUST_CHECK
+#endif
+#define IGNORE_RESULT(expression) ((void)((expression) != 0))
+```
+
+- **One exit point**: a function that acquires something releases it at a single cleanup label at the end. Forward `goto` to that label is the only `goto` allowed. This is a deliberate exception to the NASA JPL "Power of 10" rule against `goto`, and it is how C gets the effect of Rust's `Drop`.
+
+```c
+MUST_CHECK static int work_with_buffer(void)
+{
+    int result;
+    struct buffer *buffer = 0;
+
+    result = buffer_get(&buffer);
+    if (result != 0) {
+        goto out;
+    }
+    result = buffer_fill(buffer);
+out:
+    if (buffer != 0) {
+        buffer_put(buffer);
+    }
+    return result;
+}
+```
+
+- **Distinct types for distinct things.** `typedef` alone does not create a new type in C, so wrap addresses in one-field structs (`struct physical_address { uint32_t value; }`, `struct virtual_address { uint32_t value; }`). Never pass one where the other is expected.
+- **Buffers travel as a pointer and a length** in one struct, accessed through functions that check bounds in one place.
+- **Every object has one owner**, documented where it is declared. Function names say who frees (`buffer_get` and `buffer_put`, `x_take` and `x_give`).
+- **Validate once, where data enters**: system calls, IPC messages, hardware registers, disk blocks. Code behind that boundary may rely on what was checked.
+- **No dynamic allocation outside the memory manager.** Use fixed-size tables and pools.
+- **Assertions**: `ASSERT(condition)` is always on. On failure it prints file, line and condition to COM1, writes `0xEE` to port 80h, disables interrupts and halts. Use it on cold paths and for conditions that mean the kernel's own state is corrupt. `DEBUG_ASSERT(condition)` is compiled out of release builds; use it on hot paths. A stopped machine with a clear message beats silent corruption.
+
+### Strictness by tier
+
+| Tier | Code | Rules |
+| --- | --- | --- |
+| 1 | Kernel core: IPC, scheduler, memory manager, interrupt and V86 paths | All of the above, plus: no recursion, every loop has a fixed upper bound, no allocation after boot, functions under about 60 lines, and assertions on the invariants of each non-trivial function |
+| 2 | Services: disk, filesystem, block cache, device virtualisation | All of the above; bounded loops where practical; fixed pools |
+| 3 | Personalities: DOS, Linux, Windows | All of the above, except that they may allocate from the memory manager, always with a checked result |
+
+Strictness is for correctness. If a rule here makes a tier 1 function harder to read, say so rather than working around it.
+
+### Performance
+
+- Measure before tuning. Hot paths (IPC fast path, context switch, interrupt entry, V86 traps) are hand-written NASM, and each has a plain C version with the same behaviour. A host test runs both on random inputs and compares the results.
+- Compare `-Os` with `-O2` and `-mtune=i386` with `-mtune=i486` by measurement. On a cacheless 386 code size may matter more than clever scheduling.
+- Keep `ASSERT` off hot paths. Everything else here costs nothing at run time.
+- When quoting a benchmark, say which compiler built the code.
+
+### Era compiler check
+
+`make c89` proves the syntax is old enough, but only GCC says so. Before each phase gate, and whenever a new extension or header is introduced, also compile every C file with Open Watcom (`wcc386`), which is in the dev shell. It checks that the code compiles, not that it links or boots. If a feature breaks it, remove the feature.
 
 ## Checks and commits
 
