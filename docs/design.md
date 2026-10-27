@@ -53,7 +53,7 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 | 386SX compatibility | Keep it possible: everything must work within 16MB of physical memory and 24-bit addresses; ISA-only cards must work, with VLB an optional speed-up; no reliance on an FPU; memory budgets fit 16MB | The 386SX is the same CPU inside, with a 16-bit bus and 16MB limit, so keeping these rules costs little |
 | Kernel image | One image for every configuration, built for the plain 386, with 486 features enabled at boot | The same disk works in every configuration |
 | Languages | Assembly (NASM) for boot, mode switches, interrupt entry, context switching and fast paths; strict C for everything else | Learn the CPU first-hand, with C's structure where it helps |
-| Licence | MIT only, written from scratch. Nothing shipped may carry an incompatible licence; GPL and Microsoft code used only as behaviour references. Where a component would force one, write our own (a shell, for example) | Freedom to share, no tainted code |
+| Licence | Our own code is MIT, written from scratch. Third-party code is allowed only under a permissive licence (MIT, BSD, ISC or 0BSD), kept in a separate directory with its licence intact. Nothing shipped may carry an incompatible licence; GPL and Microsoft code used only as behaviour references. Where a component would force one, write our own | Freedom to share, no tainted code |
 | Debugging | Serial console on COM1 and port 80h progress codes from day one | Both work before anything else does |
 | Development | NixOS flake dev shell; QEMU, Bochs and 86Box before real hardware | Reproducible toolchain |
 | Dedication | Andrew Tanenbaum and Linus Torvalds, printed in the boot messages | Their 1992 debate is the question this project tests |
@@ -206,7 +206,7 @@ Tracing won't catch programs that walk DOS's internal tables directly (via the L
 
 - **Proposed: speak Linux's own system call interface** (`int 0x80`, the 32-bit Linux table, stable since the 1990s), starting with the Linux 2.0-era core and adding newer calls as programs need them. Original binaries and recompiled ones both use it, and the same program can be run on real Linux under `strace` and compared call by call. Unimplemented calls return `ENOSYS` and are logged; `uname` reports a matching Linux version.
 - **Alternative**: a C library ported to talk to our services directly, as GNU Hurd and Redox do. Cleaner, but loses the comparison with real Linux; a possible later experiment.
-- **First target**: a statically linked BusyBox (`ash` shell plus `ls`, `cp`, `mv`, `rm`, `mkdir`, `cat`, `less`) on musl patched for the 386, roughly 40–60 system calls. Small modern tools like htop later, which could show DOS machines and services as processes through `/proc`.
+- **First target**: NetBSD's `sh` (BSD-licensed), plus `ls`, `cp`, `mv`, `rm`, `mkdir`, `cat` and `less` (source for the tools still open), statically linked against musl patched for the 386, roughly 40–60 system calls. BusyBox and htop are GPL, so they are not used. Later, our own process viewer could show DOS machines and services as processes through `/proc`.
 - **Our own tracer**: one hook in the IPC path logs every request between programs, personalities and services.
 
 ### Windows 3.1 personality
@@ -232,7 +232,7 @@ In all cases, Standard mode comes first, on our DPMI host.
 
 **Extra: a Linux shell in a window**
 
-A 16-bit Windows terminal app (Open Watcom), a Linux pseudo-terminal with `ash` attached, and a private virtual device in our WIN386 stand-in, found through INT 2Fh 1684h like any VxD, carrying bytes between them and posting a message to the app's window when output arrives. Later: clipboard, several windows, opening files in Windows apps from Linux.
+A 16-bit Windows terminal app (Open Watcom), a Linux pseudo-terminal with our shell attached, and a private virtual device in our WIN386 stand-in, found through INT 2Fh 1684h like any VxD, carrying bytes between them and posting a message to the app's window when output arrives. Later: clipboard, several windows, opening files in Windows apps from Linux.
 
 ## Build plan (Proposed)
 
@@ -248,8 +248,8 @@ Each phase ends with a test that must pass. Experiment results from each phase g
    - Gate: X-Wing at full speed with sound and joystick on the real 386DX.
 5. **Multiple DOS machines**: device virtualization, console switching, redirected drives, snapshot cloning, idle detection, DPMI host.
    - Gate: two DOS sessions switch with Alt+F keys, the background one keeps running, and a DPMI program runs.
-6. **Linux personality**: ELF loader, the 2.0-era system call core, basic `/proc` and `/dev`, BusyBox.
-   - Gate: a BusyBox shell manages files on ext3 alongside a running DOS session.
+6. **Linux personality**: ELF loader, the 2.0-era system call core, basic `/proc` and `/dev`, NetBSD's `sh` and file tools.
+   - Gate: our shell manages files on ext3 alongside a running DOS session.
 7. **Filesystem hardening**: journal replay, ordered-mode journaling, the block cache.
    - Gate: a crash during heavy file activity recovers at the next boot without `e2fsck`.
 8. **Windows Standard mode** on the DPMI host.
@@ -266,7 +266,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 **Tools**
 
 - Compilers: GCC built for the 386 (`i686-elf` target with `--with-arch=i386`), NASM, and later Open Watcom for 16-bit pieces.
-- Userland: musl patched for the 386, BusyBox; static linking first.
+- Userland: musl patched for the 386, plus NetBSD's `sh` and file tools; static linking first.
 - Emulators: QEMU (with GDB), Bochs (debugger), 86Box (a 386DX VLB machine with a POST card), DOSBox-X's debugger for DOS behaviour.
 - Disk images: `mkfs.ext3`, `e2fsck`, `mkfs.fat`, `mtools`.
 - Measurement: 8254 timer-based timing, port 80h codes on the POST card, the IPC tracer.
@@ -275,7 +275,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 **Test programs**
 
 - DOS: X-Wing (EMS, Sound Blaster, joystick), a text-mode app, a DPMI program, a Mode X demo.
-- Linux: BusyBox tools; later htop.
+- Linux: our shell and file tools; later a process viewer.
 - Windows: Program Manager and the stock apps, in Standard then Enhanced mode.
 - Benchmarks: the hypotheses table above, on each CPU configuration.
 
@@ -309,6 +309,8 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-27 | Code stays compiler-neutral (GCC and Clang); GCC is the primary compiler and Clang builds are compared as code lands |
 | 2026-10-27 | Licence narrowed from MIT or BSD to MIT only. No shipped code or software with an incompatible licence; if that rules out a component, such as BusyBox, write our own |
 | 2026-10-27 | DOS: MS-DOS 4.0 (MIT) replaces FreeDOS as the default DOS. The DOS stays replaceable by any DOS that boots from a FAT image, such as a user-supplied FreeDOS, which is never committed or shipped |
+| 2026-10-27 | Linux userland: a custom shell and file tools replace BusyBox, and our own process viewer replaces htop, both being GPL. musl (MIT) stays |
+| 2026-10-27 | Linux shell: NetBSD `sh` (BSD-licensed) replaces the custom shell. Licence clarified: our own code is MIT; permissively licensed third-party code is allowed in a separate directory with its licence intact |
 
 ## Glossary
 

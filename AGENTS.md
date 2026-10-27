@@ -17,7 +17,7 @@ GRACEOS is a hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 (38
 
 ## Licence
 
-- The project is MIT only. Do not add, vendor or ship code or software under an incompatible licence. If a component needs one, say so and propose writing our own.
+- Our own code is MIT. Third-party code is allowed only under a permissive licence (MIT, BSD, ISC or 0BSD), in a separate directory with its licence intact. Check the header of every imported file. Do not add, vendor or ship anything under an incompatible licence, GPL included. If a component needs one, say so and propose writing our own.
 - Never use leaked or disassembled Microsoft code. GPL and Microsoft code are behaviour references only.
 
 ## Code conventions

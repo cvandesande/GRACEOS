@@ -23,7 +23,7 @@ Stretch goal: the same kernel on a 386SX. Non-goals include the 286, CPUs newer 
 - **Languages.** NASM assembly for boot, mode switches, interrupt entry, context switching and fast paths; strict C11 for everything else.
 - **Hardware.** DataExpert EXP3406 board. One kernel image for every configuration, built for the plain 386, with 486 features enabled at boot.
 - **Debugging.** Serial console on COM1 and port 80h progress codes from day one.
-- **Licence.** Written from scratch under the MIT licence only.
+- **Licence.** Our own code is written from scratch under the MIT licence. Any third-party code is permissively licensed and kept separate.
 
 ## Development
 
