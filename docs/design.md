@@ -131,6 +131,7 @@ The 386 has no cycle counter, so benchmarks use the 8254 timer chip's counter (a
 | 32-bit INT 21h handling in the DPMI host beats DOS extender round trips | No real-mode switches or extra buffer copies | File reads from a DOS4GW program against real DOS | To measure |
 | Foreground pass-through gives native game speed | No traps on VGA and Sound Blaster ports | Frame rates against bare hardware | To measure |
 | Lazy FPU switching pays off | Most threads never use the FPU; 387 saves are slow | Context switch time with and without, 386 with 387 against 486 | To measure |
+| A 387 can run slow arithmetic in the background while the 386 does integer work | The FPU runs an instruction on its own until the next `fwait` or FPU instruction. It is useful only if the coprocessor interface and the `fwait` bookkeeping cost less than the overlap saves. The kernel would then depend on FPU state, which also conflicts with lazy FPU switching | A long division or scaling loop with and without FPU offload, 386 with 387 against 486 | To measure |
 | VLB IDE 32-bit transfers roughly double disk throughput | Half the I/O operations per sector | Throughput with ISA against VLB controller, 16-bit against 32-bit transfers | To measure |
 | A tickless timer and lazy interrupt masking reduce overhead | Fewer interrupts and slow ISA I/O cycles | Idle CPU use and interrupt latency | To measure |
 
