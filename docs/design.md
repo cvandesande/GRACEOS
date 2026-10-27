@@ -1,4 +1,4 @@
-# Retro Hybrid Kernel: Design Notes
+# GRACEOS: Design Notes
 
 Oct 15, 2026 · @Chris
 
@@ -7,7 +7,7 @@ Oct 15, 2026 · @Chris
 > The dedication appears in the boot messages:
 >
 > ```
-> uKernel 0.1 - dedicated to Andrew Tanenbaum and Linus Torvalds,
+> GRACEOS 0.1 - dedicated to Andrew Tanenbaum and Linus Torvalds,
 > who argued about this in 1992. They were both right.
 > ```
 
