@@ -182,7 +182,7 @@ Always trapped, even for the foreground session, because these can bypass the CP
 
 ### DOS personality
 
-- Each DOS program runs in its own V86 virtual machine with a private first megabyte, booting FreeDOS for games, or MS-DOS 4.0 (MIT licence) for the Windows session.
+- Each DOS program runs in its own V86 virtual machine with a private first megabyte, booting MS-DOS 4.0 (MIT licence) by default. The DOS is a replaceable component: users can substitute FreeDOS or any other DOS that boots from a FAT image. FreeDOS is GPL, so it is never committed or shipped.
 - Foreground fast path: IOPL=3 with the session's hardware ports opened in the I/O bitmap.
 - Expanded memory (LIM EMS 4.0) by mapping pages into the EMS window, which X-Wing needs; a built-in 32-bit DPMI host for DOS4GW and other extenders.
 - Each machine boots from its own FAT image as C:; shared ext3 directories appear as further drive letters through DOS's network redirector (INT 2Fh).
@@ -191,12 +191,12 @@ Always trapped, even for the foreground session, because these can bypass the CP
 
 **Writing our own INT 21h: trace, then replace**
 
-1. Boot real FreeDOS and run the target games unchanged.
+1. Boot a real DOS (MS-DOS 4.0, or FreeDOS as a user-supplied alternative) and run the target games unchanged.
 2. Trap every INT 21h (and INT 10h, 13h, 16h and 2Fh) and log function numbers, registers and results per program: a DOS equivalent of `strace`.
 3. Rank the functions by use; games typically need 20–30 of DOS's roughly 100.
-4. Point INT 21h at our handler, answering what we've written and passing the rest to FreeDOS.
-5. Compare each function against FreeDOS for the same inputs: registers, carry flag, error codes and memory.
-6. Repeat until FreeDOS handles nothing.
+4. Point INT 21h at our handler, answering what we've written and passing the rest to the DOS.
+5. Compare each function against the DOS for the same inputs: registers, carry flag, error codes and memory.
+6. Repeat until the DOS handles nothing.
 
 Tracing won't catch programs that walk DOS's internal tables directly (via the List of Lists, function 52h), undocumented side effects, or direct BIOS and hardware access. Known hard cases: floppy copy protection, timing-dependent programs, and unusual VGA modes whose state is hard to save. References: Ralf Brown's Interrupt List, the MS-DOS 4.0 source, *Undocumented DOS* (Schulman) and its INTRSPY tool, DOSBox-X's debugger.
 
@@ -244,7 +244,7 @@ Each phase ends with a test that must pass. Experiment results from each phase g
    - Gate: IPC round-trip time measured on the 386DX; first comparison of candidates A and B.
 3. **First services, switchable in or out of the kernel**: disk and filesystem (ext3 at ext2 level), console.
    - Gate: files written to an ext3 image pass `e2fsck`; filesystem call cost measured inside and outside the kernel.
-4. **First DOS machine**: FreeDOS in V86 mode, foreground pass-through with trapped controllers, EMS, the INT 21h tracer.
+4. **First DOS machine**: MS-DOS 4.0 in V86 mode, foreground pass-through with trapped controllers, EMS, the INT 21h tracer.
    - Gate: X-Wing at full speed with sound and joystick on the real 386DX.
 5. **Multiple DOS machines**: device virtualization, console switching, redirected drives, snapshot cloning, idle detection, DPMI host.
    - Gate: two DOS sessions switch with Alt+F keys, the background one keeps running, and a DPMI program runs.
@@ -308,6 +308,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-27 | Rules enforced by pre-commit hooks, not CI: clang-tidy for naming and readability, Semgrep for custom rules such as comments (comments must start with `WORKAROUND:`) |
 | 2026-10-27 | Code stays compiler-neutral (GCC and Clang); GCC is the primary compiler and Clang builds are compared as code lands |
 | 2026-10-27 | Licence narrowed from MIT or BSD to MIT only. No shipped code or software with an incompatible licence; if that rules out a component, such as BusyBox, write our own |
+| 2026-10-27 | DOS: MS-DOS 4.0 (MIT) replaces FreeDOS as the default DOS. The DOS stays replaceable by any DOS that boots from a FAT image, such as a user-supplied FreeDOS, which is never committed or shipped |
 
 ## Glossary
 
