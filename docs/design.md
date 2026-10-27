@@ -88,10 +88,11 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 ### Strict C
 
 - `-std=c11 -ffreestanding -nostdlib -Wall -Wextra -Werror`, plus GCC's `-fanalyzer` or Clang's static analyzer.
+- Old-compiler compatibility: our C also compiles as C89 (`make c89` builds with `-std=c89 -pedantic`), so old compilers can build it. That means `/* */` comments only, declarations at the top of a block, no trailing comma after the last enumerator, and no `inline`, `restrict`, `long long`, `bool` or designated initialisers. `src/compat.h` supplies the missing pieces: `uint8_t`, `uint16_t` and `uint32_t` (checked at compile time, with no 64-bit type), `STATIC_ASSERT`, `STATIC_INLINE`, `RESTRICT`, `NORETURN` and `ALIGNED`. `bool`, designated initialisers, mixed declarations and compound literals have no workaround.
 - Code stays compiler-neutral: strict C11 that builds with both GCC and Clang, with no extensions beyond inline assembly and attributes both accept. GCC is the primary compiler; build with Clang too as code lands and compare the generated assembly and speed on the target.
 - Kernel logic and services also compile as ordinary programs on the host, run under AddressSanitizer and UndefinedBehaviorSanitizer.
 - Buffers passed as pointer-and-length pairs with bounds checked in one place; one documented owner for every object; distinct types for physical and virtual addresses; assertions for invariants in debug builds.
-- Names carry the meaning: functions, variables, constants, enums and types explain themselves, so the code reads without comments. A comment is the exception, written only for an unexpected workaround, and it says why the workaround is needed.
+- Names carry the meaning: functions, variables, constants, enums and types explain themselves, so the code reads without comments. A comment is the exception, written as `/* */` in C and tagged `WORKAROUND:` for an unexpected workaround (saying why it is needed) or `WHY:` for a fact a name cannot carry, such as a hardware behaviour, an ordering constraint or a datasheet reference.
 - Read the generated assembly (`gcc -S` or Compiler Explorer) to keep learning how C maps onto the machine.
 - Open Watcom for 16-bit pieces near the end (Windows `.DRV` drivers, DOS stubs). Rust stays an option for individual services later.
 
@@ -311,6 +312,9 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-27 | DOS: MS-DOS 4.0 (MIT) replaces FreeDOS as the default DOS. The DOS stays replaceable by any DOS that boots from a FAT image, such as a user-supplied FreeDOS, which is never committed or shipped |
 | 2026-10-27 | Linux userland: a custom shell and file tools replace BusyBox, and our own process viewer replaces htop, both being GPL. musl (MIT) stays |
 | 2026-10-27 | Linux shell: NetBSD `sh` (BSD-licensed) replaces the custom shell. Licence clarified: our own code is MIT; permissively licensed third-party code is allowed in a separate directory with its licence intact |
+| 2026-10-27 | Commenting rule widened: besides `WORKAROUND:`, a `WHY:` comment is allowed for a fact a name cannot carry, such as a hardware behaviour, an ordering constraint or a datasheet reference. Semgrep accepts both tags and rejects untagged comments |
+| 2026-10-27 | Old-compiler compatibility is a goal: our C must also compile as C89 (`make c89`, GCC with `-std=c89 -pedantic`). Comments in C are `/* */` only, so the `WORKAROUND:` and `WHY:` tags go inside `/* */`; `clang-tidy`'s trailing-comma check is off. `<stdint.h>` is still used, because current compilers ship it for freestanding builds |
+| 2026-10-27 | `src/compat.h` replaces `<stdint.h>` and supplies C89 workarounds for missing features: fixed-width types (no 64-bit type), `STATIC_ASSERT`, `STATIC_INLINE`, `RESTRICT`, `NORETURN` and `ALIGNED`. Features with no workaround (`bool`, designated initialisers, mixed declarations, compound literals) stay unavailable. This supersedes the earlier note that `<stdint.h>` stays |
 
 ## Glossary
 

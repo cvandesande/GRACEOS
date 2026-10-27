@@ -23,13 +23,14 @@
     {
       devShells.${system}.default = pkgs.mkShell {
         packages = [
-          cross.buildPackages.gcc
+          cross.buildPackages.gcc16
           cross.buildPackages.binutils
           pkgs.nasm
           pkgs.gnumake
           pkgs.qemu
           pkgs.gdb
-          pkgs.clang-tools
+          pkgs.llvmPackages_23.clang-tools
+          pkgs.llvmPackages_23.clang-unwrapped
           pkgs.semgrep
         ];
 

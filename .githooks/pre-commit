@@ -13,6 +13,10 @@ if [ "${#staged_c_files[@]}" -gt 0 ]; then
         || any_check_failed=1
 fi
 
+if [ "${#staged_c_files[@]}" -gt 0 ]; then
+    clang-format --dry-run --Werror "${staged_c_files[@]}" || any_check_failed=1
+fi
+
 if [ "${#staged_files[@]}" -gt 0 ]; then
     semgrep --config .semgrep --error --quiet --metrics=off --disable-version-check \
         "${staged_files[@]}" \

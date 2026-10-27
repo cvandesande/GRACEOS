@@ -6,9 +6,12 @@ Checks: >
   clang-analyzer-*,
   misc-*,
   -misc-include-cleaner,
+  -misc-use-internal-linkage,
   performance-*,
   portability-*,
-  readability-*
+  -portability-no-assembler,
+  readability-*,
+  -readability-trailing-comma
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 CheckOptions:

@@ -1,0 +1,7 @@
+CompileFlags:
+  Add: [--target=i386-none-elf, -march=i386, -std=c11, -ffreestanding, -nostdlibinc, -Isrc]
+---
+If:
+  PathMatch: .*\.h
+CompileFlags:
+  Add: [-xc]
