@@ -148,6 +148,16 @@ How each piece might work. Everything in this section is **Proposed** unless mar
 - **CPU and FPU detection**: detect the 486 at boot (it can set the AC flag in EFLAGS; a 386 can't) and enable 486-only paths such as INVLPG and CMPXCHG. With no FPU, set CR0.EM so FPU instructions trap; the Linux userland uses software floating point. FPU errors arrive on IRQ 13 for both the 387 and the 486. Lazy FPU saving only when an FPU is present. Switch on the 486's internal cache at boot. Boot messages report what was found and print the dedication.
 - **Locks: benaphores**: a counter in shared memory, starting at −1 (free), plus a counting kernel semaphore. To lock, `lock inc` the counter: a result of 0 means it was free, anything higher means sleep on the semaphore. To unlock, `lock dec`: a negative result means nobody is waiting, otherwise signal one waiter. Works on the 386 without XADD because `inc` and `dec` set the CPU flags in the same indivisible instruction, and suits ring 3, where disabling interrupts isn't allowed.
 
+### Fast paths for user-level services
+
+Ways to keep the common case out of the IPC path for services that run outside the kernel, such as the pager, the filesystem and a network stack. On a cacheless 386 an avoided copy matters most, so zero-copy buffers and the pager fast path come first; the rest wait for a measurement.
+
+- **Zero-copy shared buffers**: client and server map the same pages, and only a short message moves between them.
+- **Pager fast path**: the kernel keeps the page tables and the resident pages and calls the user-level pager only on a fault for a page that is not in memory.
+- **Packet demultiplexing at the edge**: a small lookup table in the driver or kernel sends each incoming packet straight to the right program, with no central network server in between.
+- **Batching**: a client queues several requests and makes one call, so one switch serves many operations.
+- **Client-side caching**: the client library answers repeated lookups, such as file descriptors, names and file attributes, without calling the server.
+
 ### Shared services
 
 **Disk**
