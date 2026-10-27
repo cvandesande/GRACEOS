@@ -34,6 +34,8 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 
 **Stretch goal**: the same kernel running on a 386SX. Until then, no decision may rule it out (see the 386SX row under Decisions).
 
+**Other architectures**: not a goal for this kernel, which is x86 by design (V86 mode, segments, the PC chipset). The project may later extend to other architectures as a learning exercise, so the design avoids needlessly x86-only structure where that costs nothing; no abstraction layer is added for it before a second architecture exists.
+
 **Non-goals**
 
 - Making CPU-bound code faster than the bare CPU.
@@ -114,6 +116,8 @@ Candidate B in detail: server pages are marked supervisor-only so ring 3 program
 - **C. BeOS-style**: a monolithic core with loadable drivers, user-space servers for higher-level services, pervasive threads, real-time priority bands and cheap locks (benaphores). A cautionary note: BeOS first ran networking as a user-space server, found it too slow, and moved it into the kernel.
 - **D. OS/2-style**: the DOS virtual machine manager and virtual device drivers inside the kernel, ring 2 for code allowed direct I/O, and Windows hosted by standing in for its manager, as WIN-OS/2 did.
 - **E. NT-style hybrid**: microkernel structure, but servers running in kernel space for speed.
+
+**Build order (Decided)**: start with the conventional layout, Candidate A, with servers in ring 3, and cut the number of address space switches instead of making each one cheaper: zero-copy buffers, batching, client-side caching and a shared kernel page (see "Fast paths for user-level services"). On a 386 the TLB has no tags, so a CR3 reload always flushes it and the count is the only lever. Candidate B stays an experiment, and it has to beat A by a clear margin on the board to justify its risk: ring 1 gets no protection from paging, and the 386 has no CR0.WP. Ring 3 servers also use only the two privilege levels that other architectures have.
 
 The likely outcome is a mix — for example, device virtualization and the DOS machine manager in the kernel (OS/2-like), the filesystem and Linux personality outside it (microkernel-like) — but the measurements decide.
 
@@ -326,6 +330,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-27 | Commenting rule widened: besides `WORKAROUND:`, a `WHY:` comment is allowed for a fact a name cannot carry, such as a hardware behaviour, an ordering constraint or a datasheet reference. Semgrep accepts both tags and rejects untagged comments |
 | 2026-10-27 | Old-compiler compatibility is a goal: our C must also compile as C89 (`make c89`, GCC with `-std=c89 -pedantic`). Comments in C are `/* */` only, so the `WORKAROUND:` and `WHY:` tags go inside `/* */`; `clang-tidy`'s trailing-comma check is off. `<stdint.h>` is still used, because current compilers ship it for freestanding builds |
 | 2026-10-27 | `src/compat.h` replaces `<stdint.h>` and supplies C89 workarounds for missing features: fixed-width types (no 64-bit type), `STATIC_ASSERT`, `STATIC_INLINE`, `RESTRICT`, `NORETURN` and `ALIGNED`. Features with no workaround (`bool`, designated initialisers, mixed declarations, compound literals) stay unavailable. This supersedes the earlier note that `<stdint.h>` stays |
+| 2026-10-28 | Build order for the architecture experiments: Candidate A (servers in ring 3) first, with fewer address space switches as the strategy; Candidate B (ring 1 shared region) must beat it by a clear margin. Extending to other architectures is possible later but not a goal; no abstraction layer for it until a second architecture exists |
 
 ## Glossary
 
