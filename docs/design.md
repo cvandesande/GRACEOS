@@ -51,6 +51,7 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 | Kernel style | Hybrid: microkernel-like structure, with each service placed inside or outside the kernel according to measurements | Isolation where it's cheap, speed where it matters; where each line falls is an experiment |
 | Personalities | Linux, DOS and Windows 3.1 Enhanced mode, running at the same time | The point of the project: era programs without rebooting |
 | Filesystem | ext3 as the main filesystem; DOS attributes in an ext3 extended attribute (`user.DOSATTRIB`); FAT only for floppies and DOS boot images | Journaling for fast crash recovery; attributes follow files when renamed or moved |
+| Service interface | Requests and results travel in shared-memory rings, many per kernel crossing: the most work for the fewest costly calls. The request, not the call, is the unit of work, and a synchronous call is a batch of one (see "Service interface: rings and batching") | On a 386 a crossing can cost as much as the work behind a small request, and a server that sees a batch can sort and merge it |
 | Hardware | DataExpert EXP3406 1.1 board; test order 386DX, then 386DX with 387, then 486DX, then 486DX2 | One board covers every configuration |
 | 386SX compatibility | Keep it possible: everything must work within 16MB of physical memory and 24-bit addresses; ISA-only cards must work, with VLB an optional speed-up; no reliance on an FPU; memory budgets fit 16MB | The 386SX is the same CPU inside, with a 16-bit bus and 16MB limit, so keeping these rules costs little |
 | Kernel image | One image for every configuration, built for the plain 386, with 486 features enabled at boot | The same disk works in every configuration |
@@ -102,7 +103,7 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 
 The central question: where should each service live — inside the kernel, beside it in a protected ring, or in its own address space — on a CPU where switching address spaces is expensive? Rather than decide now, build so the answer can be measured.
 
-**The experiment harness (Proposed)**: every service (filesystem, disk, devices, personalities) is written against one message-style interface that can be built two ways: as direct function calls inside the kernel, or as IPC messages to a separate task. Moving a service across the line becomes a build option, so its cost can be measured directly on each CPU configuration.
+**The experiment harness (Proposed)**: every service (filesystem, disk, devices, personalities) is written against one message-style interface, the request ring described under "Service interface: rings and batching", that can be built two ways: as direct function calls inside the kernel, one per request, or as IPC messages to a separate task. Moving a service across the line becomes a build option, so its cost can be measured directly on each CPU configuration.
 
 **Candidate designs (all Proposed)**
 
@@ -129,6 +130,7 @@ The 386 has no cycle counter, so benchmarks use the 8254 timer chip's counter (a
 | --- | --- | --- | --- |
 | Short IPC in registers, with a direct switch to the receiver, is cheap enough for services outside the kernel | L4's results on the 486 | Time IPC round trips on each CPU configuration | To measure |
 | Shared-region servers (B) are much cheaper to call than separate address spaces (A) | No CR3 reload or TLB refill | The same service in both layouts: time calls and a file-copy benchmark | To measure |
+| Batching requests in rings cuts the cost per request enough to justify making rings the core interface | A crossing costs about as much as the work behind a small request, and a server that sees a batch can sort and merge it | Doorbell with 1, 2, 4, 8 and 16 requests against the same requests as separate synchronous calls: time per request, and a file-copy benchmark, on each CPU | To measure |
 | Benaphores beat plain kernel semaphores | Uncontended locks skip the kernel | A million lock-unlock pairs, uncontended and contended. May matter little if services handle one message at a time | To measure |
 | Priority bands keep sound and input smooth under load | BeOS experience | X-Wing music while Linux copies files: count sound buffer underruns and keyboard delay. Services a session depends on must sit at or above its priority, or priority inversion results | To measure |
 | Disk access beats native DOS | RAM-wide cache, read-ahead, 32-bit code instead of real-mode BIOS and DOS | Game level loads and file copies against real DOS, with and without SMARTDRV | To measure |
@@ -146,12 +148,22 @@ How each piece might work. Everything in this section is **Proposed** unless mar
 
 ### Kernel core
 
-- **IPC**: synchronous send-and-wait calls; short messages in registers, longer ones by mapping pages; the sender switches straight to the receiver without the scheduler; a hand-written assembly fast path.
+- **IPC**: requests travel in shared-memory rings, many per crossing (see "Service interface: rings and batching"). The kernel call that rings the doorbell is a synchronous send-and-wait, and it is also the whole path for a single urgent request: short messages in registers, longer ones by mapping pages; the sender switches straight to the receiver without the scheduler; a hand-written assembly fast path.
 - **Scheduling**: priority bands borrowed from BeOS — a real-time band for sound, input and console services and the foreground DOS game, a normal band for interactive work, a low band for background sessions — with round robin inside each band. Services must sit at or above the priority of the sessions that use them. Tickless timer.
 - **Memory**: one page table per Linux process, DOS machine and Windows session; pages granted, mapped and revoked between address spaces; a user-level pager for page faults; on the 386, explicit write checks for copy-on-write.
 - **Interrupts and system calls**: interrupts delivered as messages to the service that owns them; handlers do the minimum and wake a high-priority thread; lazy masking at the 8259; system calls via INT or a call gate, whichever measures faster; software task switching with one TSS for the stack pointer and I/O bitmap.
 - **CPU and FPU detection**: detect the 486 at boot (it can set the AC flag in EFLAGS; a 386 can't) and enable 486-only paths such as INVLPG and CMPXCHG. With no FPU, set CR0.EM so FPU instructions trap; the Linux userland uses software floating point. FPU errors arrive on IRQ 13 for both the 387 and the 486. Lazy FPU saving only when an FPU is present. Switch on the 486's internal cache at boot. Boot messages report what was found and print the dedication.
 - **Locks: benaphores**: a counter in shared memory, starting at −1 (free), plus a counting kernel semaphore. To lock, `lock inc` the counter: a result of 0 means it was free, anything higher means sleep on the semaphore. To unlock, `lock dec`: a negative result means nobody is waiting, otherwise signal one waiter. Works on the 386 without XADD because `inc` and `dec` set the CPU flags in the same indivisible instruction, and suits ring 3, where disabling interrupts isn't allowed.
+
+### Service interface: rings and batching
+
+The decision is in the Decisions table; the details below are **Proposed**.
+
+- **Shape**: each service has a request ring and a completion ring in shared memory. A client writes as many requests as it has, then makes one kernel call, the doorbell. The kernel switches to the server, which works through the whole batch, posts the results and gives the CPU back.
+- **Synchronous callers are a batch of one**: a DOS `INT 21h`, a trapped port access or a Linux system call posts one request and blocks. It costs about what a plain synchronous call would, and it lets other sessions run during the wait. Batches form where there is more than one thing to do: block cache write-out and read-ahead, directory listings with attributes, input events, and our own tools.
+- **Batches pass down the chain**: the filesystem server turns the requests it receives into block requests and posts them to the disk driver in the same turn, so the disk driver is crossed once per batch.
+- **One CPU, no polling**: producer and consumer cannot run at the same time, so the doorbell is the crossing, and the gain is the crossings saved plus what the server can do with a whole batch, such as sorting by disk position and merging adjacent blocks.
+- **To work out**: a fixed request size and fixed ring sizes (pools, as the Robust C tiers require); what a full ring does (the client blocks); a flag in the ring so a server that is already awake needs no doorbell; completions in any order; cancelling a request.
 
 ### Fast paths for user-level services
 
@@ -162,7 +174,7 @@ Ways to keep the common case out of the IPC path for services that run outside t
 - **Packet demultiplexing at the edge**: a small lookup table in the driver or kernel sends each incoming packet straight to the right program, with no central network server in between.
 - **Batching**: a client queues several requests and makes one call, so one switch serves many operations.
 - **Client-side caching**: the client library answers repeated lookups, such as file descriptors, names and file attributes, without calling the server.
-- **Shared request and completion rings**, as in Linux's io_uring: a queue of requests and a queue of results in shared memory, so one switch handles a whole batch. With one CPU the gain is the batching alone, since producer and consumer cannot run at the same time. Candidates, best fit first:
+- **Shared request and completion rings**, as in Linux's io_uring, are now the core service interface (see above). Where batches are most likely to form, best fit first:
   - filesystem server to disk driver: read-ahead, journal writes and the periodic write-out arrive as batches, and the interrupt posts the completions;
   - input service to the foreground session: keyboard and mouse events in a ring, with no call per event;
   - Linux personality to filesystem server: batch internally, for example the stat calls of `ls -l`. Linux programs cannot use rings themselves, since their syscall table is 2.0-era; our own tools could use a native one.
@@ -359,6 +371,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-27 | Old-compiler compatibility is a goal: our C must also compile as C89 (`make c89`, GCC with `-std=c89 -pedantic`). Comments in C are `/* */` only, so the `WORKAROUND:` and `WHY:` tags go inside `/* */`; `clang-tidy`'s trailing-comma check is off. `<stdint.h>` is still used, because current compilers ship it for freestanding builds |
 | 2026-10-27 | `src/compat.h` replaces `<stdint.h>` and supplies C89 workarounds for missing features: fixed-width types (no 64-bit type), `STATIC_ASSERT`, `STATIC_INLINE`, `RESTRICT`, `NORETURN` and `ALIGNED`. Features with no workaround (`bool`, designated initialisers, mixed declarations, compound literals) stay unavailable. This supersedes the earlier note that `<stdint.h>` stays |
 | 2026-10-28 | Build order for the architecture experiments: Candidate A (servers in ring 3) first, with fewer address space switches as the strategy; Candidate B (ring 1 shared region) must beat it by a clear margin. Extending to other architectures is possible later but not a goal; no abstraction layer for it until a second architecture exists |
+| 2026-10-28 | Rings with batching are the core service interface from the first version: requests and results travel in shared-memory rings, many per kernel crossing, and a synchronous call is a batch of one. The aim is the most work for the fewest costly calls. This is a deliberate exception to the design principle of no abstraction before a measurement, like the experiment harness: the interface is the project's central idea, and the matching hypothesis is measured from the first IPC benchmark |
 
 ## Glossary
 
