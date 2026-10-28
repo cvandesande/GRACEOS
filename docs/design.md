@@ -140,6 +140,16 @@ Ideas taken from the systems this project studies, in order of how much they mat
 
 Not borrowed, because they are large and add nothing for DOS games or for learning microkernels: OS/2's Workplace Shell and object model, BeOS's large application API, and most of NT's Win32 subsystem.
 
+## Modern design techniques to try (Proposed)
+
+Techniques from current systems work that fit the aims of trying modern engineering on retro hardware. Each is a candidate; none is settled.
+
+- **Ownership transfer of buffers**: a buffer belongs to one side at a time and is handed over through the ring, so the sender cannot touch it afterwards. It gives zero-copy without shared-state bugs and builds on the rule of one owner per object (see `AGENTS.md`).
+- **Capabilities**: an unforgeable handle, such as an index into a per-task table, names each resource a task may use, and holding the handle is the permission (seL4 and Fuchsia work this way). It would give the DOS, Linux and Windows personalities clean boundaries with little code.
+- **Credit-based flow control**: a client gets a fixed number of credits per ring and spends one per request; the server returns them as it completes work, so a slow server pushes back instead of overflowing the ring. It answers the full-ring question in "Service interface: rings and batching".
+- **Run-to-completion servers**: each server is a loop that takes a request, handles it and never blocks in the middle; a wait becomes "post a disk request and finish later". It suits batch processing and needs no thread per request. The BeOS looper is the same shape.
+- **Deadline scheduling (earliest deadline first)**: each task states a deadline and the earliest one runs first. It is a modern alternative to the BeOS priority bands for keeping sound and input smooth, and can be tried against them in the same X-Wing test.
+
 ## Hypotheses to measure
 
 The 386 has no cycle counter, so benchmarks use the 8254 timer chip's counter (about 1.19 million ticks a second) or time many repetitions.
