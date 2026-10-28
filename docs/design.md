@@ -137,6 +137,7 @@ The 386 has no cycle counter, so benchmarks use the 8254 timer chip's counter (a
 | Lazy FPU switching pays off | Most threads never use the FPU; 387 saves are slow | Context switch time with and without, 386 with 387 against 486 | To measure |
 | A 387 can run slow arithmetic in the background while the 386 does integer work | The FPU runs an instruction on its own until the next `fwait` or FPU instruction. It is useful only if the coprocessor interface and the `fwait` bookkeeping cost less than the overlap saves. The kernel would then depend on FPU state, which also conflicts with lazy FPU switching | A long division or scaling loop with and without FPU offload, 386 with 387 against 486 | To measure |
 | VLB IDE 32-bit transfers roughly double disk throughput | Half the I/O operations per sector | Throughput with ISA against VLB controller, 16-bit against 32-bit transfers | To measure |
+| Queued INT 21h file calls keep other sessions running while a DOS machine waits, and write-behind and read-ahead shorten level loads | The CPU is free during every disk wait; the cache answers repeat and sequential access early | Level load time in X-Wing, and Linux copy speed running alongside it, against synchronous handling (step 2 against step 3 of "INT 21h through the request queue") | To measure |
 | A tickless timer and lazy interrupt masking reduce overhead | Fewer interrupts and slow ISA I/O cycles | Idle CPU use and interrupt latency | To measure |
 
 ## Proposed components
@@ -222,9 +223,28 @@ Always trapped, even for the foreground session, because these can bypass the CP
 
 Tracing won't catch programs that walk DOS's internal tables directly (via the List of Lists, function 52h), undocumented side effects, or direct BIOS and hardware access. Known hard cases: floppy copy protection, timing-dependent programs, and unusual VGA modes whose state is hard to save. References: Ralf Brown's Interrupt List, the MS-DOS 4.0 source, *Undocumented DOS* (Schulman) and its INTRSPY tool, DOSBox-X's debugger.
 
-### Linux personality
+**INT 21h through the request queue (Proposed)**
 
-**Open question**: run original binaries from the era, small tools recompiled for the 386, or both.
+Goal: serve a DOS machine's file calls through the filesystem server's request queue, so other sessions keep the CPU while a DOS machine waits for the disk, and calls the cache can answer return at once.
+
+What the research found:
+
+- With IOPL below 3, an `INT n` in V86 mode raises a general-protection fault, and the monitor may emulate the service or reflect it to the DOS ([Intel 386 manual, section 15.4](https://css.csail.mit.edu/6.5660/2010/readings/i386/s15_04.htm)). To check against the manual: that the foreground session at IOPL=3 reaches the kernel too, through the IDT.
+- DOS is not reentrant. It is safe to call it again only when the InDOS and critical-error flags are both zero, and INT 28h marks moments when calls above function 0Ch are safe ([Art of Assembly, chapter 18](https://shrek.unideb.hu/~gjhalasz/assembly/masm/Chapter_18/CH18-3.html)). So the kernel never injects DOS calls into a machine from outside; a completion only resumes the machine after the `INT 21h` that is waiting.
+- There is precedent for serving `INT 21h` in protected mode instead of in DOS: Windows for Workgroups 3.11 32-bit file access did it ([Wikipedia](https://en.wikipedia.org/wiki/Microsoft_32-bit_file_access)).
+- Write-behind caching has a known cost: SMARTDRV held writes until the cache filled or about five seconds of idle time, and data could be lost if the machine was switched off right after quitting a program ([cache.txt](https://surfhelpt.duckdns.org/textfiles.com/computers/cache.txt)).
+
+Steps, each with a gate:
+
+1. **Trace first** (the trace-and-replace step above): record which file functions each target game calls, and how often during play compared with loading. Gate: if play makes almost no file calls, the queue only matters for loading, and step 4 can be dropped.
+2. **Synchronous trap path**: `INT 21h` from the V86 machine goes to the kernel, which calls the filesystem server directly. Measure the trap cost per call at IOPL below 3 and at IOPL=3, on each CPU.
+3. **Queue path**: the handler builds a request (function, handle, buffer in the machine's memory mapped without copying, length), posts it to the ring, marks the machine blocked and switches to another session. The completion sets the registers and the carry flag and resumes the machine after the `INT`. Start with read and write (3Fh, 40h), then open, close and seek.
+4. **Early answers**: write-behind and read-ahead, only for handles on ext3 files. Rules: size and timestamps are correct at once; a late error is reported at the next call on that handle; a machine's dirty data is flushed on close, on exit (4Ch) and when the machine is killed.
+5. **Compare** with step 2 using the same benchmarks.
+
+Risks: a program that hooks `INT 21h` sees our handler last in the chain, which should be harmless but needs testing with a resident program such as a mouse driver; late write errors such as a full disk reach programs that do not expect them; losing power loses the write-behind data, which ext3's ordered journal limits but does not remove.
+
+: run original binaries from the era, small tools recompiled for the 386, or both.
 
 - **Proposed: speak Linux's own system call interface** (`int 0x80`, the 32-bit Linux table, stable since the 1990s), starting with the Linux 2.0-era core and adding newer calls as programs need them. Original binaries and recompiled ones both use it, and the same program can be run on real Linux under `strace` and compared call by call. Unimplemented calls return `ENOSYS` and are logged; `uname` reports a matching Linux version.
 - **Alternative**: a C library ported to talk to our services directly, as GNU Hurd and Redox do. Cleaner, but loses the comparison with real Linux; a possible later experiment.
