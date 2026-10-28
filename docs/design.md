@@ -28,6 +28,7 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 **Aims**
 
 - See whether modern software engineering techniques, such as batched ring interfaces, strict static analysis and host-side tests, can get better results out of retro hardware.
+- Write the code in flight-software style: it fails loudly and early and never silently, with every error checked, one owner for every object and assertions on invariants (see "Robust C").
 - Play the DOS games of the era on our own kernel.
 - Learn how microkernels work by combining the best of OS/2, BeOS, NT and Windows 3.1 Enhanced mode.
 
@@ -100,10 +101,30 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 - Old-compiler compatibility: our C also compiles as C89 (`make c89` builds with `-std=c89 -pedantic`), so old compilers can build it. That means `/* */` comments only, declarations at the top of a block, no trailing comma after the last enumerator, and no `inline`, `restrict`, `long long`, `bool` or designated initialisers. `src/compat.h` supplies the missing pieces: `uint8_t`, `uint16_t` and `uint32_t` (checked at compile time, with no 64-bit type), `STATIC_ASSERT`, `STATIC_INLINE`, `RESTRICT`, `NORETURN` and `ALIGNED`. `bool`, designated initialisers, mixed declarations and compound literals have no workaround.
 - Code stays compiler-neutral: strict C11 that builds with both GCC and Clang, with no extensions beyond inline assembly and attributes both accept. GCC is the primary compiler; build with Clang too as code lands and compare the generated assembly and speed on the target.
 - Kernel logic and services also compile as ordinary programs on the host, run under AddressSanitizer and UndefinedBehaviorSanitizer.
-- Buffers passed as pointer-and-length pairs with bounds checked in one place; one documented owner for every object; distinct types for physical and virtual addresses; assertions for invariants in debug builds.
+- Buffers passed as pointer-and-length pairs with bounds checked in one place; one documented owner for every object; distinct types for physical and virtual addresses; assertions for invariants (see "Robust C").
 - Names carry the meaning: functions, variables, constants, enums and types explain themselves, so the code reads without comments. A comment is the exception, written as `/* */` in C and tagged `WORKAROUND:` for an unexpected workaround (saying why it is needed) or `WHY:` for a fact a name cannot carry, such as a hardware behaviour, an ordering constraint or a datasheet reference.
 - Read the generated assembly (`gcc -S` or Compiler Explorer) to keep learning how C maps onto the machine.
 - Open Watcom for 16-bit pieces near the end (Windows `.DRV` drivers, DOS stubs). Rust stays an option for individual services later.
+
+### Robust C (Decided)
+
+Flight-software style: the code fails loudly and early, and never silently. These rules sit on top of Strict C, and the pre-commit hook and the builds enforce what they can. The exact wording and code examples are in `AGENTS.md`.
+
+- **Errors**: a function that can fail returns `int`, 0 for success and a negative code such as `-E_NOMEM` on failure, and is marked `MUST_CHECK`. Results come back through pointer parameters. Every return value is checked; ignoring one on purpose needs `IGNORE_RESULT` and a `WHY:` comment.
+- **One exit point**: a function that acquires something releases it at one cleanup label at the end. A forward `goto` to that label is the only `goto` allowed, a deliberate exception to the NASA JPL "Power of 10" rule, and it is how C gets the effect of Rust's `Drop`.
+- **Types and ownership**: distinct one-field structs for physical and virtual addresses, buffers as a pointer and a length checked in one place, and one documented owner for every object.
+- **Validate once, where data enters**: system calls, IPC messages, hardware registers and disk blocks. Code behind that boundary relies on what was checked.
+- **No dynamic allocation outside the memory manager**: fixed-size tables and pools.
+- **Assertions**: `ASSERT` is always on. On failure it prints file, line and condition to COM1, writes `0xEE` to port 80h, disables interrupts and halts. `DEBUG_ASSERT` is compiled out of release builds and is for hot paths.
+- **Hot paths**: IPC fast path, context switch, interrupt entry and V86 traps are hand-written NASM, and each has a plain C version with the same behaviour. A host test runs both on random inputs and compares the results.
+
+Strictness depends on the tier, because it is there for correctness. If a rule makes a tier 1 function harder to read, say so instead of working around it.
+
+| Tier | Code | Rules |
+| --- | --- | --- |
+| 1 | Kernel core: IPC, scheduler, memory manager, interrupt and V86 paths | All of the above, plus no recursion, a fixed upper bound on every loop, no allocation after boot, functions under about 60 lines, and assertions on the invariants of each non-trivial function |
+| 2 | Services: disk, filesystem, block cache, device virtualization | All of the above, with bounded loops where practical and fixed pools |
+| 3 | Personalities: POSIX, DOS, Windows | All of the above, except that they may allocate from the memory manager, always with a checked result |
 
 ## Architecture experiments
 
@@ -401,6 +422,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-27 | Commenting rule widened: besides `WORKAROUND:`, a `WHY:` comment is allowed for a fact a name cannot carry, such as a hardware behaviour, an ordering constraint or a datasheet reference. Semgrep accepts both tags and rejects untagged comments |
 | 2026-10-27 | Old-compiler compatibility is a goal: our C must also compile as C89 (`make c89`, GCC with `-std=c89 -pedantic`). Comments in C are `/* */` only, so the `WORKAROUND:` and `WHY:` tags go inside `/* */`; `clang-tidy`'s trailing-comma check is off. `<stdint.h>` is still used, because current compilers ship it for freestanding builds |
 | 2026-10-27 | `src/compat.h` replaces `<stdint.h>` and supplies C89 workarounds for missing features: fixed-width types (no 64-bit type), `STATIC_ASSERT`, `STATIC_INLINE`, `RESTRICT`, `NORETURN` and `ALIGNED`. Features with no workaround (`bool`, designated initialisers, mixed declarations, compound literals) stay unavailable. This supersedes the earlier note that `<stdint.h>` stays |
+| 2026-10-27 | Flight-software style adopted as an aim, written up as "Robust C" in `AGENTS.md` and recorded in the design on 2026-10-28: checked `int` error returns, one cleanup exit, distinct address types, validation where data enters, no allocation outside the memory manager, `ASSERT` and `DEBUG_ASSERT`, and three strictness tiers (kernel core, services, personalities) |
 | 2026-10-28 | Build order for the architecture experiments: Candidate A (servers in ring 3) first, with fewer address space switches as the strategy; Candidate B (ring 1 shared region) must beat it by a clear margin. Extending to other architectures is possible later but not a goal; no abstraction layer for it until a second architecture exists |
 | 2026-10-28 | Rings with batching are the core service interface from the first version: requests and results travel in shared-memory rings, many per kernel crossing, and a synchronous call is a batch of one. The aim is the most work for the fewest costly calls. This is a deliberate exception to the design principle of no abstraction before a measurement, like the experiment harness: the interface is the project's central idea, and the matching hypothesis is measured from the first IPC benchmark |
 | 2026-10-28 | Aims stated: try modern software engineering techniques on retro hardware, play the era's DOS games on our own kernel, and learn microkernels by combining the best of OS/2, BeOS, NT and Windows 3.1 Enhanced mode. The ring architecture is the first architecture to test, with a plain synchronous interface as the measured baseline; this refines the entry above, which made rings the core interface from the first version |
