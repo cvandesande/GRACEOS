@@ -244,7 +244,9 @@ Steps, each with a gate:
 
 Risks: a program that hooks `INT 21h` sees our handler last in the chain, which should be harmless but needs testing with a resident program such as a mouse driver; late write errors such as a full disk reach programs that do not expect them; losing power loses the write-behind data, which ext3's ordered journal limits but does not remove.
 
-: run original binaries from the era, small tools recompiled for the 386, or both.
+### Linux personality
+
+**Open question**: run original binaries from the era, small tools recompiled for the 386, or both.
 
 - **Proposed: speak Linux's own system call interface** (`int 0x80`, the 32-bit Linux table, stable since the 1990s), starting with the Linux 2.0-era core and adding newer calls as programs need them. Original binaries and recompiled ones both use it, and the same program can be run on real Linux under `strace` and compared call by call. Unimplemented calls return `ENOSYS` and are logged; `uname` reports a matching Linux version.
 - **Alternative**: a C library ported to talk to our services directly, as GNU Hurd and Redox do. Cleaner, but loses the comparison with real Linux; a possible later experiment.
