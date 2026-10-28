@@ -128,6 +128,18 @@ Candidate B in detail: server pages are marked supervisor-only so ring 3 program
 
 The likely outcome is a mix — for example, device virtualization and the DOS machine manager in the kernel (OS/2-like), the filesystem and Linux personality outside it (microkernel-like) — but the measurements decide.
 
+## What we borrow (Proposed)
+
+Ideas taken from the systems this project studies, in order of how much they matter to the aims. Each is a candidate to try, not a settled choice.
+
+1. **NT's I/O request packets (IRPs)**: every I/O is a request packet that can be passed down a stack of drivers and completes asynchronously. This is close to the ring design: the request is the unit of work. Take the idea; leave out NT's object manager and security descriptors.
+2. **BeOS loopers**: each server is a thread with a message queue that handles one message at a time and never blocks in the middle. Also BeOS's priority bands and benaphores, which are already hypotheses below. The cautionary tale is that BeOS moved networking into the kernel for speed.
+3. **OS/2's virtual DOS machines and virtual device drivers, and Windows 3.1 Enhanced mode's VMM and VxDs**: essential for the DOS and Windows personalities, since they do the same job. Behaviour reference only.
+4. **L4's fast IPC and user-level pagers**: the direct switch to the receiver, small address spaces and a pager the kernel calls only on a miss.
+5. **NT's hardware abstraction layer**: a thin layer between the kernel and the hardware. The `cpu_operations` table in `AGENTS.md` is the same idea, and should stay that small.
+
+Not borrowed, because they are large and add nothing for DOS games or for learning microkernels: OS/2's Workplace Shell and object model, BeOS's large application API, and most of NT's Win32 subsystem.
+
 ## Hypotheses to measure
 
 The 386 has no cycle counter, so benchmarks use the 8254 timer chip's counter (about 1.19 million ticks a second) or time many repetitions.
