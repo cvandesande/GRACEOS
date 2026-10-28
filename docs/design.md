@@ -25,6 +25,12 @@ As experiments run, items move from Proposed or To measure to Decided, and the d
 
 A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhanced mode at the same time, so programs from the era run side by side without rebooting. It's also a test bench: try ideas from microkernels, BeOS and OS/2, and measure which run best on a 386, then with a 387 and on a 486.
 
+**Aims**
+
+- See whether modern software engineering techniques, such as batched ring interfaces, strict static analysis and host-side tests, can get better results out of retro hardware.
+- Play the DOS games of the era on our own kernel.
+- Learn how microkernels work by combining the best of OS/2, BeOS, NT and Windows 3.1 Enhanced mode.
+
 **Milestones, in order**
 
 1. A working kernel core.
@@ -51,7 +57,7 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 | Kernel style | Hybrid: microkernel-like structure, with each service placed inside or outside the kernel according to measurements | Isolation where it's cheap, speed where it matters; where each line falls is an experiment |
 | Personalities | Linux, DOS and Windows 3.1 Enhanced mode, running at the same time | The point of the project: era programs without rebooting |
 | Filesystem | ext3 as the main filesystem; DOS attributes in an ext3 extended attribute (`user.DOSATTRIB`); FAT only for floppies and DOS boot images | Journaling for fast crash recovery; attributes follow files when renamed or moved |
-| Service interface | Requests and results travel in shared-memory rings, many per kernel crossing: the most work for the fewest costly calls. The request, not the call, is the unit of work, and a synchronous call is a batch of one (see "Service interface: rings and batching") | On a 386 a crossing can cost as much as the work behind a small request, and a server that sees a batch can sort and merge it |
+| First architecture to test | Requests and results travel in shared-memory rings, many per kernel crossing: the most work for the fewest costly calls. The request, not the call, is the unit of work, and a synchronous call is a batch of one (see "Service interface: rings and batching"). A plain synchronous interface is built alongside as the baseline, so every claim for the ring is measured against it | It is the modern technique this project most wants to try on retro hardware. Whether it pays on a 386 is the experiment, not an assumption |
 | Hardware | DataExpert EXP3406 1.1 board; test order 386DX, then 386DX with 387, then 486DX, then 486DX2 | One board covers every configuration |
 | 386SX compatibility | Keep it possible: everything must work within 16MB of physical memory and 24-bit addresses; ISA-only cards must work, with VLB an optional speed-up; no reliance on an FPU; memory budgets fit 16MB | The 386SX is the same CPU inside, with a 16-bit bus and 16MB limit, so keeping these rules costs little |
 | Kernel image | One image for every configuration, built for the plain 386, with 486 features enabled at boot | The same disk works in every configuration |
@@ -157,7 +163,7 @@ How each piece might work. Everything in this section is **Proposed** unless mar
 
 ### Service interface: rings and batching
 
-The decision is in the Decisions table; the details below are **Proposed**.
+This is the first architecture to test (see the Decisions table); the details below are **Proposed**. The synchronous baseline is the same services behind plain send-and-wait calls, one request per crossing, and the benchmarks compare the two on each CPU, concentrating on warm-cache, small-request paths, since requests that wait on the disk hide the crossing cost.
 
 - **Shape**: each service has a request ring and a completion ring in shared memory. A client writes as many requests as it has, then makes one kernel call, the doorbell. The kernel switches to the server, which works through the whole batch, posts the results and gives the CPU back.
 - **Synchronous callers are a batch of one**: a DOS `INT 21h`, a trapped port access or a Linux system call posts one request and blocks. It costs about what a plain synchronous call would, and it lets other sessions run during the wait. Batches form where there is more than one thing to do: block cache write-out and read-ahead, directory listings with attributes, input events, and our own tools.
@@ -372,6 +378,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-27 | `src/compat.h` replaces `<stdint.h>` and supplies C89 workarounds for missing features: fixed-width types (no 64-bit type), `STATIC_ASSERT`, `STATIC_INLINE`, `RESTRICT`, `NORETURN` and `ALIGNED`. Features with no workaround (`bool`, designated initialisers, mixed declarations, compound literals) stay unavailable. This supersedes the earlier note that `<stdint.h>` stays |
 | 2026-10-28 | Build order for the architecture experiments: Candidate A (servers in ring 3) first, with fewer address space switches as the strategy; Candidate B (ring 1 shared region) must beat it by a clear margin. Extending to other architectures is possible later but not a goal; no abstraction layer for it until a second architecture exists |
 | 2026-10-28 | Rings with batching are the core service interface from the first version: requests and results travel in shared-memory rings, many per kernel crossing, and a synchronous call is a batch of one. The aim is the most work for the fewest costly calls. This is a deliberate exception to the design principle of no abstraction before a measurement, like the experiment harness: the interface is the project's central idea, and the matching hypothesis is measured from the first IPC benchmark |
+| 2026-10-28 | Aims stated: try modern software engineering techniques on retro hardware, play the era's DOS games on our own kernel, and learn microkernels by combining the best of OS/2, BeOS, NT and Windows 3.1 Enhanced mode. The ring architecture is the first architecture to test, with a plain synchronous interface as the measured baseline; this refines the entry above, which made rings the core interface from the first version |
 
 ## Glossary
 
