@@ -23,4 +23,17 @@ if [ "${#staged_files[@]}" -gt 0 ]; then
         || any_check_failed=1
 fi
 
+build_inputs_staged=0
+for staged_file in "${staged_files[@]}"; do
+    case "$staged_file" in
+        *.c | *.h | *.asm | *.inc | Makefile | linker.ld) build_inputs_staged=1 ;;
+    esac
+done
+
+if [ "$build_inputs_staged" -eq 1 ]; then
+    make --silent && make --silent clang && make --silent c89 && make --silent disk \
+        && make --silent check386 && make --silent check386 BUILD=build/clang && make --silent check386 BUILD=build/c89 \
+        || any_check_failed=1
+fi
+
 exit "$any_check_failed"
