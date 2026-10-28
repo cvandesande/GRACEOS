@@ -27,7 +27,7 @@ Stretch goal: the same kernel on a 386SX. Non-goals include the 286, CPUs newer 
 
 ## Development
 
-The toolchain is a Nix flake dev shell: an `i686-elf` GCC and binutils built with `--with-arch=i386`, NASM, Make, QEMU and GDB. 86Box and the disk-image tools are added as the phases need them.
+The toolchain is a Nix flake dev shell: an `i686-elf` GCC and binutils built with `--with-arch=i386`, NASM, Make, QEMU, GDB and the checking tools (`clang-tidy`, `clang-format` and Semgrep). 86Box and the disk-image tools are added as the phases need them.
 
 ```sh
 nix develop

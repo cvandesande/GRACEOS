@@ -99,7 +99,7 @@ Strictness is for correctness. If a rule here makes a tier 1 function harder to 
 
 ### Era compiler check
 
-`make c89` proves the syntax is old enough, but only GCC says so. Before each phase gate, and whenever a new extension or header is introduced, also compile every C file with Open Watcom (`wcc386`), which is in the dev shell. It checks that the code compiles, not that it links or boots. If a feature breaks it, remove the feature.
+`make c89` proves the syntax is old enough, but only GCC says so. Before each phase gate, and whenever a new extension or header is introduced, also compile every C file with Open Watcom (`wcc386`), which the flake does not provide yet: add it to `flake.nix` when the first gate needs it. It checks that the code compiles, not that it links or boots. If a feature breaks it, remove the feature.
 
 ## Checks and commits
 
@@ -107,7 +107,7 @@ Strictness is for correctness. If a rule here makes a tier 1 function harder to 
 - Verify a change with `make` (GCC), `make clang`, `make c89`, `make disk` and `make check386` (add `BUILD=build/clang` or `BUILD=build/c89` for the other kernels), then `make run` (boots in QEMU with serial on the terminal; quit with Ctrl-A then X) or `make run-disk` (boots through our own loader). A change is done when all three builds pass and the banner appears. The hook runs everything except the boot.
 - Commit from inside `nix develop`. The hook needs its tools, and the dev shell is what activates it.
 - Fix violations. Never bypass the hook with `--no-verify`.
-- Claude Code also runs `clang-format -i` on a C file after each edit, and asks before `git push` and `gh` commands (both in `.claude/settings.json`).
+- Claude Code also runs `clang-format -i` on a C file after each edit when it was started inside `nix develop` (elsewhere `clang-format` is not on `PATH` and the hook does nothing), and asks before `git push` and `gh` commands (both in `.claude/settings.json`).
 - Put `Closes #N` in a commit message to close an issue.
 
 ## Tracking
