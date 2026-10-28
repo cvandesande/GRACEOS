@@ -96,7 +96,7 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 
 ### Strict C
 
-- `-std=c11 -ffreestanding -nostdlib -Wall -Wextra -Werror`, plus GCC's `-fanalyzer` or Clang's static analyzer.
+- `-std=c11 -pedantic -ffreestanding -nostdlib -Werror`, with the strictest warning set for each compiler: an explicit GCC list plus `-fanalyzer`, and Clang's `-Weverything` minus the exclusions listed in the `Makefile`.
 - Old-compiler compatibility: our C also compiles as C89 (`make c89` builds with `-std=c89 -pedantic`), so old compilers can build it. That means `/* */` comments only, declarations at the top of a block, no trailing comma after the last enumerator, and no `inline`, `restrict`, `long long`, `bool` or designated initialisers. `src/compat.h` supplies the missing pieces: `uint8_t`, `uint16_t` and `uint32_t` (checked at compile time, with no 64-bit type), `STATIC_ASSERT`, `STATIC_INLINE`, `RESTRICT`, `NORETURN` and `ALIGNED`. `bool`, designated initialisers, mixed declarations and compound literals have no workaround.
 - Code stays compiler-neutral: strict C11 that builds with both GCC and Clang, with no extensions beyond inline assembly and attributes both accept. GCC is the primary compiler; build with Clang too as code lands and compare the generated assembly and speed on the target.
 - Kernel logic and services also compile as ordinary programs on the host, run under AddressSanitizer and UndefinedBehaviorSanitizer.
@@ -328,7 +328,7 @@ Each phase ends with a test that must pass. Experiment results from each phase g
 1. **Toolchain and boot**: cross-compiler, boot loader, protected mode, serial console, boot messages with the dedication.
    - Gate: boot messages over serial in Bochs and on the real 386DX.
 2. **Kernel core and measurement harness**: paging, threads, IPC, interrupts, CPU and FPU detection, timer-based benchmarks.
-   - Gate: IPC round-trip time measured on the 386DX; first comparison of candidates A and B.
+   - Gate: IPC round-trip time measured on the 386DX; first comparison of candidates A and B, and of the request ring against the synchronous baseline.
 3. **First services, switchable in or out of the kernel**: disk and filesystem (ext3 at ext2 level), console.
    - Gate: files written to an ext3 image pass `e2fsck`; filesystem call cost measured inside and outside the kernel.
 4. **First DOS machine**: MS-DOS 4.0 in V86 mode, foreground pass-through with trapped controllers, EMS, the INT 21h tracer.
@@ -413,7 +413,6 @@ Plain-language meanings of the terms used in this plan.
 | Term | Meaning |
 | --- | --- |
 | Address space | One program's private view of memory, defined by its page table |
-| a.out / ELF | Executable file formats used by Linux binaries |
 | BusyBox | A shell and about 300 Unix tools in one small program |
 | Call gate | A kernel-defined entry point programs can jump through to reach more privileged code |
 | CLI / STI | Instructions that disable / enable hardware interrupts |
@@ -424,6 +423,7 @@ Plain-language meanings of the terms used in this plan.
 | CR0.WP | Flag (486+) that makes kernel code respect read-only pages |
 | DMA | Hardware copying data between a device and memory without the CPU |
 | DOS4GW | Popular DOS extender used by many 32-bit DOS games |
+| Doorbell | The one kernel call that tells a server its request ring has new requests, and switches to it |
 | DPMI | DOS Protected Mode Interface, standard services for protected-mode DOS programs |
 | EMS | Expanded memory: extra memory DOS programs reach through a window in upper memory |
 | EOI | End Of Interrupt, the "done" signal sent to the interrupt controller |
@@ -447,7 +447,8 @@ Plain-language meanings of the terms used in this plan.
 | Personality | A server that makes the system look like a particular OS (POSIX, DOS, Windows) to programs |
 | PIC | Programmable Interrupt Controller, the 8259 chip |
 | Redirector | DOS's interface for network-style drives, used here for shared ext3 directories |
-| Ring | CPU privilege level, 0 (kernel) to 3 (applications) |
+| Ring (privilege level) | CPU privilege level, 0 (kernel) to 3 (applications) |
+| Ring (request or completion) | A queue in shared memory: a client posts requests to a server's request ring, and the server posts results to the completion ring |
 | Server | A program that waits for request messages and replies to them |
 | TLB | Translation Lookaside Buffer, the CPU's cache of address translations |
 | TSS | Task State Segment, holds the kernel stack pointer and I/O bitmap |
