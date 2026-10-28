@@ -185,6 +185,7 @@ The 386 has no cycle counter, so benchmarks use the 8254 timer chip's counter (a
 | Disk access beats native DOS | RAM-wide cache, read-ahead, 32-bit code instead of real-mode BIOS and DOS | Game level loads and file copies against real DOS, with and without SMARTDRV | To measure |
 | 32-bit INT 21h handling in the DPMI host beats DOS extender round trips | No real-mode switches or extra buffer copies | File reads from a DOS4GW program against real DOS | To measure |
 | Foreground pass-through gives native game speed | No traps on VGA and Sound Blaster ports | Frame rates against bare hardware | To measure |
+| Mixing the 8-bit digital audio of a background DOS machine into the real card costs only a few percent of a 386's CPU | It is mostly copying and adding samples at 11 to 22kHz; the timing and interrupt emulation is the hard part | A DOS game playing digital audio in the background at 11 and 22kHz: CPU use of the mixer, and whether the game runs without hanging, on the 386DX | To measure |
 | Lazy FPU switching pays off | Most threads never use the FPU; 387 saves are slow | Context switch time with and without, 386 with 387 against 486 | To measure |
 | A 387 can run slow arithmetic in the background while the 386 does integer work | The FPU runs an instruction on its own until the next `fwait` or FPU instruction. It is useful only if the coprocessor interface and the `fwait` bookkeeping cost less than the overlap saves. The kernel would then depend on FPU state, which also conflicts with lazy FPU switching | A long division or scaling loop with and without FPU offload, 386 with 387 against 486 | To measure |
 | VLB IDE 32-bit transfers roughly double disk throughput | Half the I/O operations per sector | Throughput with ISA against VLB controller, 16-bit against 32-bit transfers | To measure |
@@ -263,6 +264,13 @@ Ways to keep the common case out of the IPC path for services that run outside t
 | Serial, parallel | Assigned to one session at a time | Blocked until released |
 
 Always trapped, even for the foreground session, because these can bypass the CPU's protection: the DMA controller (addresses checked and translated, since DMA ignores paging), the 8259 interrupt controllers and timer (virtual copies per session), the keyboard controller (it can reset the CPU and controls the A20 line) and the disk controller. The foreground session runs at IOPL=3, so a game that hangs with interrupts off can freeze the machine, as on real DOS. Also here: the console switcher (Alt+F1, F2, F3) and idle detection for DOS programs spinning on the keyboard.
+
+**Sound across sessions (Proposed; open question)**
+
+- **One owner at a time**: the foreground session owns the sound card. Switching away pauses the game's sound: FM music is silenced by writing key-off to the chip's registers, which costs nothing. Digital audio is the risk: the DSP's state cannot be read back, so it cannot be frozen and restored exactly, and a game waiting for a sound interrupt that never came may stutter, loop or hang when its session returns.
+- **Open: sound for the POSIX personality.** It needs a sound service with its own driver and interface, and it follows the same owner rule: whichever session is in the foreground gets the card.
+- **Possible later experiment**: forward the 8-bit digital audio of a background DOS machine by reading its DMA buffer and mixing it into the real card's output. That is mostly copying and adding samples; the hard part is faking the timing and interrupts well enough that games do not hang. FM emulation is ruled out for now as too costly on a 386.
+- **Precedent**: Windows NT left DOS sound out, and third-party tools such as VDMSound (whose code later went into DOSBox) filled the gap with Sound Blaster and AdLib emulation, with known problems from incomplete interrupt and PIC emulation ([Wikipedia](https://en.wikipedia.org/wiki/VDMSound), [Vttoth](https://vttoth.com/CMS/technical-notes/88-sound-for-dos-programs-under-windows-nt)). Windows 3.1 and 95 behaviour is unverified.
 
 ### DOS personality
 
