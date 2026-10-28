@@ -21,7 +21,7 @@ POST_386_REGISTERS := %(xmm|ymm|zmm|mm)[0-9]
 
 .DELETE_ON_ERROR:
 
-KERNEL_OBJECTS := $(BUILD)/boot.o $(BUILD)/kmain.o $(BUILD)/serial.o $(BUILD)/assertion.o
+KERNEL_OBJECTS := $(BUILD)/boot.o $(BUILD)/kmain.o $(BUILD)/serial.o $(BUILD)/assertion.o $(BUILD)/gdt.o
 
 $(BUILD)/kernel.elf: $(KERNEL_OBJECTS) linker.ld
 	i686-elf-ld -m elf_i386 --no-warn-rwx-segments -z noexecstack -T linker.ld -o $@ $(KERNEL_OBJECTS)
@@ -32,7 +32,7 @@ $(BUILD)/boot.o: src/boot.asm src/kernel_header.inc | $(BUILD)
 $(BUILD)/%.o: src/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
--include $(BUILD)/kmain.d $(BUILD)/serial.d $(BUILD)/assertion.d
+-include $(BUILD)/kmain.d $(BUILD)/serial.d $(BUILD)/assertion.d $(BUILD)/gdt.d
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	i686-elf-objcopy -O binary $< $@
