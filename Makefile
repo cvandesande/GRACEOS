@@ -65,6 +65,10 @@ check386: $(BUILD)/kernel.elf
 		| grep -E '^ *[0-9a-f]+:[[:space:]]+((lock|rep|repz|repnz|data16|addr16)[[:space:]]+)*(($(POST_386_INSTRUCTIONS))([[:space:]]|$$)|.*$(POST_386_REGISTERS))'; then \
 		echo "$< contains instructions the plain 386 lacks"; exit 1; fi
 
+test: $(BUILD)/kernel.elf $(BUILD)/disk.img
+	tests/boot_test.sh -kernel $(BUILD)/kernel.elf
+	tests/boot_test.sh -drive format=raw,file=$(BUILD)/disk.img
+
 run: $(BUILD)/kernel.elf
 	qemu-system-i386 -cpu 486 -kernel $(BUILD)/kernel.elf -nographic -no-reboot
 
@@ -74,4 +78,4 @@ run-disk: $(BUILD)/disk.img
 clean:
 	rm -rf build
 
-.PHONY: clang c89 check386 disk run run-disk clean
+.PHONY: clang c89 check386 disk test run run-disk clean
