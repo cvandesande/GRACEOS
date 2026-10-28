@@ -4,7 +4,7 @@ GRACEOS is a hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and
 
 ## Where to look
 
-- `docs/design.md`: the source of truth. Decisions, proposals, hypotheses, build plan and decision log. Read it before proposing anything.
+- `docs/design.md`: the source of truth. Decisions, proposals, hypotheses, build plan and decision log. Read all of it with the Read tool before proposing anything; do not search it with `grep`, which skips the Decided and Proposed labels around a match.
 - `README.md`: short summary of the project.
 - `flake.nix`: the dev shell. Run `nix develop` to get the toolchain and activate the pre-commit hook.
 - GitHub milestones: one per build-plan phase, with the phase gate as the description. Check the current phase there.
