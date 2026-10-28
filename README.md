@@ -4,7 +4,7 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 
 > Dedicated to Andrew Tanenbaum and Linus Torvalds, who argued about microkernels and monolithic kernels in 1992. They were both right.
 
-**Status:** just started. So far there is only a dev shell flake, which has not been built or tested yet. The design is a living document: see [docs/design.md](docs/design.md).
+**Status:** Phase 1 (toolchain and boot) is in progress. The kernel boots in QEMU, directly or through our own boot loader, loads its own GDT and prints the banner over serial. It has not yet run on real hardware. The design is a living document: see [docs/design.md](docs/design.md).
 
 ## Goals
 
@@ -27,7 +27,7 @@ Stretch goal: the same kernel on a 386SX. Non-goals include the 286, CPUs newer 
 
 ## Development
 
-The toolchain is a Nix flake dev shell: an `i686-elf` GCC and binutils built with `--with-arch=i386`, NASM, Make, QEMU and GDB. Bochs, 86Box and the disk-image tools are added as the phases need them.
+The toolchain is a Nix flake dev shell: an `i686-elf` GCC and binutils built with `--with-arch=i386`, NASM, Make, QEMU and GDB. 86Box and the disk-image tools are added as the phases need them.
 
 ```sh
 nix develop

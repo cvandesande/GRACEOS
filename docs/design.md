@@ -65,7 +65,7 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 | Languages | Assembly (NASM) for boot, mode switches, interrupt entry, context switching and fast paths; strict C for everything else | Learn the CPU first-hand, with C's structure where it helps |
 | Licence | Our own code is MIT, written from scratch. Third-party code is allowed only under a permissive licence (MIT, BSD, ISC or 0BSD), kept in a separate directory with its licence intact. Nothing shipped may carry an incompatible licence; GPL and Microsoft code used only as behaviour references. Where a component would force one, write our own | Freedom to share, no tainted code |
 | Debugging | Serial console on COM1 and port 80h progress codes from day one | Both work before anything else does |
-| Development | NixOS flake dev shell; QEMU, Bochs and 86Box before real hardware | Reproducible toolchain |
+| Development | NixOS flake dev shell; QEMU and 86Box before real hardware | Reproducible toolchain |
 | Dedication | Andrew Tanenbaum and Linus Torvalds, printed in the boot messages | Their 1992 debate is the question this project tests |
 | Design principle | Code need not be perfect, but it must be simple and easy to read. Small designs with few options: no configurability, abstraction layers or negotiation until a measurement or a concrete need justifies them | Simple code can be read and audited end to end, and fixed choices leave nothing to misconfigure; imperfect code that is easy to read can be fixed, while clever code cannot. WireGuard, a few thousand lines with one fixed set of cryptographic primitives, is the model. The experiment harness is the deliberate exception, since it exists to measure |
 
@@ -347,7 +347,7 @@ A 16-bit Windows terminal app (Open Watcom), a POSIX pseudo-terminal with our sh
 Each phase ends with a test that must pass. Experiment results from each phase go into the decision log.
 
 1. **Toolchain and boot**: cross-compiler, boot loader, protected mode, serial console, boot messages with the dedication.
-   - Gate: boot messages over serial in Bochs and on the real 386DX.
+   - Gate: boot messages over serial in QEMU and on the real 386DX.
 2. **Kernel core and measurement harness**: paging, threads, IPC, interrupts, CPU and FPU detection, timer-based benchmarks.
    - Gate: IPC round-trip time measured on the 386DX; first comparison of candidates A and B, and of the request ring against the synchronous baseline.
 3. **First services, switchable in or out of the kernel**: disk and filesystem (ext3 at ext2 level), console.
@@ -375,7 +375,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 
 - Compilers: GCC built for the 386 (`i686-elf` target with `--with-arch=i386`), NASM, and later Open Watcom for 16-bit pieces.
 - Userland: a C library of our own or a BSD libc (open), plus NetBSD's `sh` and file tools; static linking first.
-- Emulators: QEMU (with GDB), Bochs (debugger), 86Box (a 386DX VLB machine with a POST card), DOSBox-X's debugger for DOS behaviour.
+- Emulators: QEMU (with GDB), 86Box (a 386DX VLB machine with a POST card), DOSBox-X's debugger for DOS behaviour.
 - Disk images: `mkfs.ext3`, `e2fsck`, `mkfs.fat`, `mtools`.
 - Measurement: 8254 timer-based timing, port 80h codes on the POST card, the IPC tracer.
 - Real machine: the EXP3406 board, an ISA POST card with code history, a null-modem serial cable, an industrial CF card in an IDE adapter, later a network card.
@@ -429,6 +429,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-28 | A POSIX personality replaces the Linux personality. Target: popular Unix programs of the era, from source, not Linux specifically. The 2.0-era Linux system call table, the ELF loader and `/proc` are dropped, and musl is no longer assumed because it is tied to Linux system calls; the C library is open. Linux binary compatibility could return as an optional personality. Supersedes the 2026-10-27 entries on the Linux userland and musl |
 | 2026-10-28 | Our own boot loader in NASM (MIT) replaces GRUB, which is GPL. Boot medium: a hard disk image, with an MBR boot sector that loads a second stage from the sectors after it, read with plain CHS INT 13h calls because a 386-era BIOS may lack the LBA extensions. The kernel is a flat binary that starts with a small header of our own (magic, load address, file size, end of `.bss`, entry address), filled in by the linker. The loader copies it to 1MB through unreal mode and zeroes the `.bss`. No ELF parser in the loader. Another architecture would need its own loader, so the header is fixed at 32-bit little-endian fields |
 | 2026-10-28 | The kernel builds with `-fno-stack-protector`. The Nix GCC enables the stack protector by default, and any function with an array then needs `__stack_chk_guard` and `__stack_chk_fail`, which the freestanding kernel lacks (the link failed once `serial_put_unsigned` got a `char` array). Turning it off loses the run-time check for stack overflows. Open: provide our own guard value and failure function, which halts like `ASSERT`, once the kernel has a source for a random guard |
+| 2026-10-28 | Bochs is dropped as a test emulator: it is a heavy dependency, the nixpkgs build may not model a 386, and it cannot replace the real board. The Phase 1 gate becomes boot messages over serial in QEMU and on the real 386DX. Kernel faults are made diagnosable on the real board by an IDT with a fault handler that prints to COM1, built next. Revisit Bochs if the board shows a failure we cannot explain |
 
 ## Glossary
 
