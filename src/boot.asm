@@ -1,3 +1,4 @@
+cpu 386
 bits 32
 
 MULTIBOOT_MAGIC     equ 0x1BADB002
@@ -5,6 +6,20 @@ MULTIBOOT_FLAGS     equ 0
 POST_PORT           equ 0x80
 POST_CODE_ENTERED   equ 0x01
 STACK_BYTES         equ 16384
+
+%include "kernel_header.inc"
+
+extern image_start
+extern image_file_bytes
+extern image_end
+
+section .loader_header
+align 4
+    dd KERNEL_IMAGE_MAGIC
+    dd image_start
+    dd image_file_bytes
+    dd image_end
+    dd _start
 
 section .multiboot
 align 4
