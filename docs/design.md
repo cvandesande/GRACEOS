@@ -161,6 +161,12 @@ Ways to keep the common case out of the IPC path for services that run outside t
 - **Packet demultiplexing at the edge**: a small lookup table in the driver or kernel sends each incoming packet straight to the right program, with no central network server in between.
 - **Batching**: a client queues several requests and makes one call, so one switch serves many operations.
 - **Client-side caching**: the client library answers repeated lookups, such as file descriptors, names and file attributes, without calling the server.
+- **Shared request and completion rings**, as in Linux's io_uring: a queue of requests and a queue of results in shared memory, so one switch handles a whole batch. With one CPU the gain is the batching alone, since producer and consumer cannot run at the same time. Candidates, best fit first:
+  - filesystem server to disk driver: read-ahead, journal writes and the periodic write-out arrive as batches, and the interrupt posts the completions;
+  - input service to the foreground session: keyboard and mouse events in a ring, with no call per event;
+  - Linux personality to filesystem server: batch internally, for example the stat calls of `ls -l`. Linux programs cannot use rings themselves, since their syscall table is 2.0-era; our own tools could use a native one.
+
+  A poor fit for the DOS and Windows personalities: a DOS program waits for each INT 21h answer, and trapped port I/O needs its result immediately.
 
 ### Shared services
 
