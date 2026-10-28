@@ -2,7 +2,8 @@ BUILD := build/gcc
 CC := i686-elf-gcc
 STD := c11
 # WHY: -Wa,-march=i386 makes GNU as reject 486 instructions in inline assembly, which -march=i386 alone lets through; Clang's assembler ignores it
-COMMON_FLAGS := -std=$(STD) -pedantic -ffreestanding -nostdlib -march=i386 -Wa,-march=i386 -O2 -Werror
+# WORKAROUND: the Nix GCC enables the stack protector by default, which needs __stack_chk_guard and __stack_chk_fail, and the kernel has neither
+COMMON_FLAGS := -std=$(STD) -pedantic -ffreestanding -nostdlib -fno-stack-protector -march=i386 -Wa,-march=i386 -O2 -Werror
 GCC_WARNINGS := -Wall -Wextra -Wconversion -Wsign-conversion -Wshadow -Wstrict-prototypes \
 	-Wmissing-prototypes -Wmissing-declarations -Wold-style-definition -Wredundant-decls \
 	-Wcast-qual -Wcast-align -Wpointer-arith -Wwrite-strings -Wundef -Wformat=2 \
@@ -20,16 +21,18 @@ POST_386_REGISTERS := %(xmm|ymm|zmm|mm)[0-9]
 
 .DELETE_ON_ERROR:
 
-$(BUILD)/kernel.elf: $(BUILD)/boot.o $(BUILD)/kmain.o linker.ld
-	i686-elf-ld -m elf_i386 --no-warn-rwx-segments -z noexecstack -T linker.ld -o $@ $(BUILD)/boot.o $(BUILD)/kmain.o
+KERNEL_OBJECTS := $(BUILD)/boot.o $(BUILD)/kmain.o $(BUILD)/serial.o $(BUILD)/assertion.o
+
+$(BUILD)/kernel.elf: $(KERNEL_OBJECTS) linker.ld
+	i686-elf-ld -m elf_i386 --no-warn-rwx-segments -z noexecstack -T linker.ld -o $@ $(KERNEL_OBJECTS)
 
 $(BUILD)/boot.o: src/boot.asm src/kernel_header.inc | $(BUILD)
 	nasm -f elf32 -Werror -I src/ $< -o $@
 
-$(BUILD)/kmain.o: src/kmain.c | $(BUILD)
+$(BUILD)/%.o: src/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
--include $(BUILD)/kmain.d
+-include $(BUILD)/kmain.d $(BUILD)/serial.d $(BUILD)/assertion.d
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	i686-elf-objcopy -O binary $< $@

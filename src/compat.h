@@ -40,4 +40,13 @@ STATIC_ASSERT(sizeof(uint32_t) == 4, uint32_is_four_bytes_t);
 #define ALIGNED(bytes) __attribute__((aligned(bytes)))
 #endif
 
+#if defined(__GNUC__) && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4))
+#define MUST_CHECK __attribute__((warn_unused_result))
+#else
+#define MUST_CHECK
+#endif
+
+/* WHY: a plain (void) cast does not silence warn_unused_result in GCC. */
+#define IGNORE_RESULT(expression) ((void)((expression) != 0))
+
 #endif
