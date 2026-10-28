@@ -1,6 +1,6 @@
 # GRACEOS
 
-A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 (386 Enhanced mode) programs side by side, without rebooting. It is also a test bench for ideas from microkernels, BeOS and OS/2, measured on a real 386DX, then with a 387, then on a 486.
+A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.1 (386 Enhanced mode) programs side by side, without rebooting. It is also a test bench for ideas from microkernels, BeOS and OS/2, measured on a real 386DX, then with a 387, then on a 486.
 
 > Dedicated to Andrew Tanenbaum and Linus Torvalds, who argued about microkernels and monolithic kernels in 1992. They were both right.
 
@@ -12,7 +12,7 @@ In order:
 
 1. A working kernel core.
 2. DOS games at full speed with sound and joystick. Finish line: X-Wing on a real 386DX.
-3. A Linux shell with basic file tools.
+3. A POSIX shell with basic file tools.
 4. Windows 3.1 in Enhanced mode: Program Manager and the stock apps.
 
 Stretch goal: the same kernel on a 386SX. Non-goals include the 286, CPUs newer than the 486, Windows 95 or later, and any leaked or disassembled Microsoft code.
@@ -40,7 +40,7 @@ nix develop
 3. First services: disk and filesystem (ext3).
 4. First DOS machine (V86 mode).
 5. Multiple DOS machines.
-6. Linux personality.
+6. POSIX personality.
 7. Filesystem hardening.
 8. Windows Standard mode.
 9. Windows Enhanced mode.

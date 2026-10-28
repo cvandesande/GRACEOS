@@ -23,7 +23,7 @@ As experiments run, items move from Proposed or To measure to Decided, and the d
 
 ## Goal (Decided)
 
-A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhanced mode at the same time, so programs from the era run side by side without rebooting. It's also a test bench: try ideas from microkernels, BeOS and OS/2, and measure which run best on a 386, then with a 387 and on a 486.
+A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.1 in 386 Enhanced mode at the same time, so programs from the era run side by side without rebooting. It's also a test bench: try ideas from microkernels, BeOS and OS/2, and measure which run best on a 386, then with a 387 and on a 486.
 
 **Aims**
 
@@ -35,7 +35,7 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 
 1. A working kernel core.
 2. DOS games at full speed with sound and joystick. Finish line: X-Wing on a real 386DX.
-3. A Linux shell with basic file tools.
+3. A POSIX shell with basic file tools.
 4. Windows 3.1 in Enhanced mode: Program Manager and the stock apps.
 
 **Stretch goal**: the same kernel running on a 386SX. Until then, no decision may rule it out (see the 386SX row under Decisions).
@@ -55,7 +55,7 @@ A hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 in 386 Enhance
 | Area | Decision | Why |
 | --- | --- | --- |
 | Kernel style | Hybrid: microkernel-like structure, with each service placed inside or outside the kernel according to measurements | Isolation where it's cheap, speed where it matters; where each line falls is an experiment |
-| Personalities | Linux, DOS and Windows 3.1 Enhanced mode, running at the same time | The point of the project: era programs without rebooting |
+| Personalities | POSIX (Unix), DOS and Windows 3.1 Enhanced mode, running at the same time | The point of the project: era programs without rebooting |
 | Filesystem | ext3 as the main filesystem; DOS attributes in an ext3 extended attribute (`user.DOSATTRIB`); FAT only for floppies and DOS boot images | Journaling for fast crash recovery; attributes follow files when renamed or moved |
 | First architecture to test | Requests and results travel in shared-memory rings, many per kernel crossing: the most work for the fewest costly calls. The request, not the call, is the unit of work, and a synchronous call is a batch of one (see "Service interface: rings and batching"). A plain synchronous interface is built alongside as the baseline, so every claim for the ring is measured against it | It is the modern technique this project most wants to try on retro hardware. Whether it pays on a 386 is the experiment, not an assumption |
 | Hardware | DataExpert EXP3406 1.1 board; test order 386DX, then 386DX with 387, then 486DX, then 486DX2 | One board covers every configuration |
@@ -126,7 +126,7 @@ Candidate B in detail: server pages are marked supervisor-only so ring 3 program
 
 **Build order (Decided)**: start with the conventional layout, Candidate A, with servers in ring 3, and cut the number of address space switches instead of making each one cheaper: zero-copy buffers, batching, client-side caching and a shared kernel page (see "Fast paths for user-level services"). On a 386 the TLB has no tags, so a CR3 reload always flushes it and the count is the only lever. Candidate B stays an experiment, and it has to beat A by a clear margin on the board to justify its risk: ring 1 gets no protection from paging, and the 386 has no CR0.WP. Ring 3 servers also use only the two privilege levels that other architectures have.
 
-The likely outcome is a mix — for example, device virtualization and the DOS machine manager in the kernel (OS/2-like), the filesystem and Linux personality outside it (microkernel-like) — but the measurements decide.
+The likely outcome is a mix — for example, device virtualization and the DOS machine manager in the kernel (OS/2-like), the filesystem and POSIX personality outside it (microkernel-like) — but the measurements decide.
 
 ## What we borrow (Proposed)
 
@@ -145,7 +145,7 @@ Not borrowed, because they are large and add nothing for DOS games or for learni
 Techniques from current systems work that fit the aims of trying modern engineering on retro hardware. Each is a candidate; none is settled.
 
 - **Ownership transfer of buffers**: a buffer belongs to one side at a time and is handed over through the ring, so the sender cannot touch it afterwards. It gives zero-copy without shared-state bugs and builds on the rule of one owner per object (see `AGENTS.md`).
-- **Capabilities**: an unforgeable handle, such as an index into a per-task table, names each resource a task may use, and holding the handle is the permission (seL4 and Fuchsia work this way). It would give the DOS, Linux and Windows personalities clean boundaries with little code.
+- **Capabilities**: an unforgeable handle, such as an index into a per-task table, names each resource a task may use, and holding the handle is the permission (seL4 and Fuchsia work this way). It would give the DOS, POSIX and Windows personalities clean boundaries with little code.
 - **Credit-based flow control**: a client gets a fixed number of credits per ring and spends one per request; the server returns them as it completes work, so a slow server pushes back instead of overflowing the ring. It answers the full-ring question in "Service interface: rings and batching".
 - **Run-to-completion servers**: each server is a loop that takes a request, handles it and never blocks in the middle; a wait becomes "post a disk request and finish later". It suits batch processing and needs no thread per request. The BeOS looper is the same shape.
 - **Deadline scheduling (earliest deadline first)**: each task states a deadline and the earliest one runs first. It is a modern alternative to the BeOS priority bands for keeping sound and input smooth, and can be tried against them in the same X-Wing test.
@@ -160,14 +160,14 @@ The 386 has no cycle counter, so benchmarks use the 8254 timer chip's counter (a
 | Shared-region servers (B) are much cheaper to call than separate address spaces (A) | No CR3 reload or TLB refill | The same service in both layouts: time calls and a file-copy benchmark | To measure |
 | Batching requests in rings cuts the cost per request enough to justify making rings the core interface | A crossing costs about as much as the work behind a small request, and a server that sees a batch can sort and merge it | Doorbell with 1, 2, 4, 8 and 16 requests against the same requests as separate synchronous calls: time per request, and a file-copy benchmark, on each CPU | To measure |
 | Benaphores beat plain kernel semaphores | Uncontended locks skip the kernel | A million lock-unlock pairs, uncontended and contended. May matter little if services handle one message at a time | To measure |
-| Priority bands keep sound and input smooth under load | BeOS experience | X-Wing music while Linux copies files: count sound buffer underruns and keyboard delay. Services a session depends on must sit at or above its priority, or priority inversion results | To measure |
+| Priority bands keep sound and input smooth under load | BeOS experience | X-Wing music while a POSIX program copies files: count sound buffer underruns and keyboard delay. Services a session depends on must sit at or above its priority, or priority inversion results | To measure |
 | Disk access beats native DOS | RAM-wide cache, read-ahead, 32-bit code instead of real-mode BIOS and DOS | Game level loads and file copies against real DOS, with and without SMARTDRV | To measure |
 | 32-bit INT 21h handling in the DPMI host beats DOS extender round trips | No real-mode switches or extra buffer copies | File reads from a DOS4GW program against real DOS | To measure |
 | Foreground pass-through gives native game speed | No traps on VGA and Sound Blaster ports | Frame rates against bare hardware | To measure |
 | Lazy FPU switching pays off | Most threads never use the FPU; 387 saves are slow | Context switch time with and without, 386 with 387 against 486 | To measure |
 | A 387 can run slow arithmetic in the background while the 386 does integer work | The FPU runs an instruction on its own until the next `fwait` or FPU instruction. It is useful only if the coprocessor interface and the `fwait` bookkeeping cost less than the overlap saves. The kernel would then depend on FPU state, which also conflicts with lazy FPU switching | A long division or scaling loop with and without FPU offload, 386 with 387 against 486 | To measure |
 | VLB IDE 32-bit transfers roughly double disk throughput | Half the I/O operations per sector | Throughput with ISA against VLB controller, 16-bit against 32-bit transfers | To measure |
-| Queued INT 21h file calls keep other sessions running while a DOS machine waits, and write-behind and read-ahead shorten level loads | The CPU is free during every disk wait; the cache answers repeat and sequential access early | Level load time in X-Wing, and Linux copy speed running alongside it, against synchronous handling (step 2 against step 3 of "INT 21h through the request queue") | To measure |
+| Queued INT 21h file calls keep other sessions running while a DOS machine waits, and write-behind and read-ahead shorten level loads | The CPU is free during every disk wait; the cache answers repeat and sequential access early | Level load time in X-Wing, and POSIX copy speed running alongside it, against synchronous handling (step 2 against step 3 of "INT 21h through the request queue") | To measure |
 | A tickless timer and lazy interrupt masking reduce overhead | Fewer interrupts and slow ISA I/O cycles | Idle CPU use and interrupt latency | To measure |
 
 ## Proposed components
@@ -178,9 +178,9 @@ How each piece might work. Everything in this section is **Proposed** unless mar
 
 - **IPC**: requests travel in shared-memory rings, many per crossing (see "Service interface: rings and batching"). The kernel call that rings the doorbell is a synchronous send-and-wait, and it is also the whole path for a single urgent request: short messages in registers, longer ones by mapping pages; the sender switches straight to the receiver without the scheduler; a hand-written assembly fast path.
 - **Scheduling**: priority bands borrowed from BeOS — a real-time band for sound, input and console services and the foreground DOS game, a normal band for interactive work, a low band for background sessions — with round robin inside each band. Services must sit at or above the priority of the sessions that use them. Tickless timer.
-- **Memory**: one page table per Linux process, DOS machine and Windows session; pages granted, mapped and revoked between address spaces; a user-level pager for page faults; on the 386, explicit write checks for copy-on-write.
+- **Memory**: one page table per POSIX process, DOS machine and Windows session; pages granted, mapped and revoked between address spaces; a user-level pager for page faults; on the 386, explicit write checks for copy-on-write.
 - **Interrupts and system calls**: interrupts delivered as messages to the service that owns them; handlers do the minimum and wake a high-priority thread; lazy masking at the 8259; system calls via INT or a call gate, whichever measures faster; software task switching with one TSS for the stack pointer and I/O bitmap.
-- **CPU and FPU detection**: detect the 486 at boot (it can set the AC flag in EFLAGS; a 386 can't) and enable 486-only paths such as INVLPG and CMPXCHG. With no FPU, set CR0.EM so FPU instructions trap; the Linux userland uses software floating point. FPU errors arrive on IRQ 13 for both the 387 and the 486. Lazy FPU saving only when an FPU is present. Switch on the 486's internal cache at boot. Boot messages report what was found and print the dedication.
+- **CPU and FPU detection**: detect the 486 at boot (it can set the AC flag in EFLAGS; a 386 can't) and enable 486-only paths such as INVLPG and CMPXCHG. With no FPU, set CR0.EM so FPU instructions trap; the POSIX userland uses software floating point. FPU errors arrive on IRQ 13 for both the 387 and the 486. Lazy FPU saving only when an FPU is present. Switch on the 486's internal cache at boot. Boot messages report what was found and print the dedication.
 - **Locks: benaphores**: a counter in shared memory, starting at −1 (free), plus a counting kernel semaphore. To lock, `lock inc` the counter: a result of 0 means it was free, anything higher means sleep on the semaphore. To unlock, `lock dec`: a negative result means nobody is waiting, otherwise signal one waiter. Works on the 386 without XADD because `inc` and `dec` set the CPU flags in the same indivisible instruction, and suits ring 3, where disabling interrupts isn't allowed.
 
 ### Service interface: rings and batching
@@ -188,7 +188,7 @@ How each piece might work. Everything in this section is **Proposed** unless mar
 This is the first architecture to test (see the Decisions table); the details below are **Proposed**. The synchronous baseline is the same services behind plain send-and-wait calls, one request per crossing, and the benchmarks compare the two on each CPU, concentrating on warm-cache, small-request paths, since requests that wait on the disk hide the crossing cost.
 
 - **Shape**: each service has a request ring and a completion ring in shared memory. A client writes as many requests as it has, then makes one kernel call, the doorbell. The kernel switches to the server, which works through the whole batch, posts the results and gives the CPU back.
-- **Synchronous callers are a batch of one**: a DOS `INT 21h`, a trapped port access or a Linux system call posts one request and blocks. It costs about what a plain synchronous call would, and it lets other sessions run during the wait. Batches form where there is more than one thing to do: block cache write-out and read-ahead, directory listings with attributes, input events, and our own tools.
+- **Synchronous callers are a batch of one**: a DOS `INT 21h`, a trapped port access or a POSIX system call posts one request and blocks. It costs about what a plain synchronous call would, and it lets other sessions run during the wait. Batches form where there is more than one thing to do: block cache write-out and read-ahead, directory listings with attributes, input events, and our own tools.
 - **Batches pass down the chain**: the filesystem server turns the requests it receives into block requests and posts them to the disk driver in the same turn, so the disk driver is crossed once per batch.
 - **One CPU, no polling**: producer and consumer cannot run at the same time, so the doorbell is the crossing, and the gain is the crossings saved plus what the server can do with a whole batch, such as sorting by disk position and merging adjacent blocks.
 - **To work out**: a fixed request size and fixed ring sizes (pools, as the Robust C tiers require); what a full ring does (the client blocks); a flag in the ring so a server that is already awake needs no doorbell; completions in any order; cancelling a request.
@@ -205,7 +205,7 @@ Ways to keep the common case out of the IPC path for services that run outside t
 - **Shared request and completion rings**, as in Linux's io_uring, are now the core service interface (see above). Where batches are most likely to form, best fit first:
   - filesystem server to disk driver: read-ahead, journal writes and the periodic write-out arrive as batches, and the interrupt posts the completions;
   - input service to the foreground session: keyboard and mouse events in a ring, with no call per event;
-  - Linux personality to filesystem server: batch internally, for example the stat calls of `ls -l`. Linux programs cannot use rings themselves, since their syscall table is 2.0-era; our own tools could use a native one.
+  - POSIX personality to filesystem server: batch internally, for example the stat calls of `ls -l`. Our own C library can also offer native batched calls to the programs we recompile.
 
   A poor fit for the DOS and Windows personalities: a DOS program waits for each INT 21h answer, and trapped port I/O needs its result immediately.
 
@@ -220,7 +220,7 @@ Ways to keep the common case out of the IPC path for services that run outside t
 
 - ext3, built in stages: first ext2-level reading and writing of the ext3 disk (cleaning the journal with `e2fsck` on the development PC after crashes), then journal replay at boot, then full ordered-mode journaling.
 - FAT12/16 for floppies and each DOS machine's private boot disk, a FAT image stored as an ordinary file on ext3.
-- One interface for redirected DOS INT 21h file calls and Linux file calls, answered in 32-bit code.
+- One interface for redirected DOS INT 21h file calls and POSIX file calls, answered in 32-bit code.
 - DOS sees long names as 8.3 short names, with case-insensitive lookups and a rule for clashes such as `README` and `readme`. Read-only maps to Unix permissions; hidden, system and archive bits live in the `user.DOSATTRIB` extended attribute.
 - Windows 3.1 uses a temporary swap file and runs with 32-bit disk access off.
 
@@ -250,7 +250,7 @@ Always trapped, even for the foreground session, because these can bypass the CP
 - Expanded memory (LIM EMS 4.0) by mapping pages into the EMS window, which X-Wing needs; a built-in 32-bit DPMI host for DOS4GW and other extenders.
 - Each machine boots from its own FAT image as C:; shared ext3 directories appear as further drive letters through DOS's network redirector (INT 2Fh).
 - Instant sessions: snapshot a booted DOS machine at the prompt and clone it with copy-on-write.
-- Typing a DOS `.EXE` at the Linux shell starts it in a new DOS machine.
+- Typing a DOS `.EXE` at the POSIX shell starts it in a new DOS machine.
 
 **Writing our own INT 21h: trace, then replace**
 
@@ -284,18 +284,21 @@ Steps, each with a gate:
 
 Risks: a program that hooks `INT 21h` sees our handler last in the chain, which should be harmless but needs testing with a resident program such as a mouse driver; late write errors such as a full disk reach programs that do not expect them; losing power loses the write-behind data, which ext3's ordered journal limits but does not remove.
 
-### Linux personality
+### POSIX personality
 
-**Open question**: run original binaries from the era, small tools recompiled for the 386, or both.
+**Decided (2026-10-28)**: a POSIX personality replaces the Linux personality. The target is popular Unix programs of the era, including but not limited to Linux ones, compiled from source for our system. Original Linux or BSD binaries are not a goal; binary compatibility with Linux could return later as a separate, optional personality.
 
-- **Proposed: speak Linux's own system call interface** (`int 0x80`, the 32-bit Linux table, stable since the 1990s), starting with the Linux 2.0-era core and adding newer calls as programs need them. Original binaries and recompiled ones both use it, and the same program can be run on real Linux under `strace` and compared call by call. Unimplemented calls return `ENOSYS` and are logged; `uname` reports a matching Linux version.
-- **Alternative**: a C library ported to talk to our services directly, as GNU Hurd and Redox do. Cleaner, but loses the comparison with real Linux; a possible later experiment.
-- **First target**: NetBSD's `sh` (BSD-licensed), plus `ls`, `cp`, `mv`, `rm`, `mkdir`, `cat` and `less` (source for the tools still open), statically linked against musl patched for the 386, roughly 40–60 system calls. BusyBox and htop are GPL, so they are not used. Later, our own process viewer could show DOS machines and services as processes through `/proc`.
+- **Interface**: a POSIX subset implemented by our own C library on top of our services, with the request rings underneath. Programs are recompiled against it. Calls are added as target programs need them; an unimplemented call returns `ENOSYS` and is logged.
+- **Batching in the interface**: POSIX already has batch calls (`lio_listio`, `readv`, `writev`), and the library can add native calls where POSIX has none, such as listing a directory with its attributes in one request.
+- **What a target program needs**: `fork` (copy-on-write page tables) and `exec`, pipes, signals, terminal I/O (`termios`) and pseudo-terminals, and for some programs `select` or `mmap`. Networking is out of scope for now.
+- **Where the programs come from**: the 4.4BSD-Lite lineage of userland, as carried on in NetBSD and FreeBSD, is era-appropriate and BSD-licensed. First target: NetBSD's `sh`, plus `ls`, `cp`, `mv`, `rm`, `mkdir`, `cat` and `less`, then an editor and `make`. Check the licence header of every imported file. GPL programs such as BusyBox and htop are not shipped. Later, our own process viewer could show DOS machines and services as processes.
+- **C library: open**. musl is tied to Linux system calls, so it is no longer assumed. Candidates are a BSD libc or our own small one; the choice waits until the first programs run.
+- **Known hard cases**: programs that assume Linux-only features such as `/proc` and `epoll`, BSD-only ones such as `kqueue`, and programs that depend heavily on `fork`. The list of targets is chosen to avoid them.
 - **Our own tracer**: one hook in the IPC path logs every request between programs, personalities and services.
 
 ### Windows 3.1 personality
 
-The goal is **Decided**: Windows 3.1 in 386 Enhanced mode, running Program Manager and the stock apps alongside Linux and DOS. How to get there is open.
+The goal is **Decided**: Windows 3.1 in 386 Enhanced mode, running Program Manager and the stock apps alongside POSIX and DOS. How to get there is open.
 
 **Approaches**
 
@@ -309,14 +312,14 @@ In all cases, Standard mode comes first, on our DPMI host.
 
 - Our own 16-bit Windows display, keyboard and mouse drivers (`.DRV` files, documented in the DDK), talking straight to the device virtualization service.
 - Our DOS supports the undocumented hooks Windows depends on: INT 2Fh 1605h, the Swappable Data Area (INT 21h 5D06h) and the List of Lists (52h).
-- Typing `win` at the Linux shell, or `WIN` at a DOS prompt, creates a DOS machine running MS-DOS 4.0 on the next free console and starts Windows; exiting closes it and switches back.
+- Typing `win` at the POSIX shell, or `WIN` at a DOS prompt, creates a DOS machine running MS-DOS 4.0 on the next free console and starts Windows; exiting closes it and switches back.
 - Behaviour comes from documentation and tracing: the Windows 3.1 DDK, the DPMI 0.9 specification, *Undocumented Windows* (Schulman), *Windows Internals* (Pietrek), Geoff Chappell's notes and Ralf Brown's Interrupt List; log every DPMI call, INT 2Fh call and VxD entry from stock Windows and implement the most frequent first. Wine's 16-bit code, HX DOS Extender and DOSEMU2 are references.
 - Never copy disassembled Windows code. EU law permits reverse engineering for interoperability under certain conditions (not legal advice).
 - The AARD check in a 1991 beta is disabled in the retail release. FreeDOS has historically struggled with stock WIN386 in Enhanced mode, which approach 1 sidesteps.
 
-**Extra: a Linux shell in a window**
+**Extra: a POSIX shell in a window**
 
-A 16-bit Windows terminal app (Open Watcom), a Linux pseudo-terminal with our shell attached, and a private virtual device in our WIN386 stand-in, found through INT 2Fh 1684h like any VxD, carrying bytes between them and posting a message to the app's window when output arrives. Later: clipboard, several windows, opening files in Windows apps from Linux.
+A 16-bit Windows terminal app (Open Watcom), a POSIX pseudo-terminal with our shell attached, and a private virtual device in our WIN386 stand-in, found through INT 2Fh 1684h like any VxD, carrying bytes between them and posting a message to the app's window when output arrives. Later: clipboard, several windows, opening files in Windows apps from the POSIX side.
 
 ## Build plan (Proposed)
 
@@ -332,14 +335,14 @@ Each phase ends with a test that must pass. Experiment results from each phase g
    - Gate: X-Wing at full speed with sound and joystick on the real 386DX.
 5. **Multiple DOS machines**: device virtualization, console switching, redirected drives, snapshot cloning, idle detection, DPMI host.
    - Gate: two DOS sessions switch with Alt+F keys, the background one keeps running, and a DPMI program runs.
-6. **Linux personality**: ELF loader, the 2.0-era system call core, basic `/proc` and `/dev`, NetBSD's `sh` and file tools.
+6. **POSIX personality**: executable loader, a POSIX subset in our own C library, basic `/dev`, NetBSD's `sh` and file tools.
    - Gate: our shell manages files on ext3 alongside a running DOS session.
 7. **Filesystem hardening**: journal replay, ordered-mode journaling, the block cache.
    - Gate: a crash during heavy file activity recovers at the next boot without `e2fsck`.
 8. **Windows Standard mode** on the DPMI host.
    - Gate: Program Manager and the stock apps run.
 9. **Windows Enhanced mode**, by the approach the experiments favour.
-   - Gate: Program Manager and the stock apps run in Enhanced mode alongside Linux and DOS sessions.
+   - Gate: Program Manager and the stock apps run in Enhanced mode alongside POSIX and DOS sessions.
 10. **Architecture review and performance pass**: settle where each service lives; run every benchmark on the 386DX, 386DX with 387, 486DX and 486DX2.
     - Gate: results recorded and the architecture decisions logged.
 
@@ -350,7 +353,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 **Tools**
 
 - Compilers: GCC built for the 386 (`i686-elf` target with `--with-arch=i386`), NASM, and later Open Watcom for 16-bit pieces.
-- Userland: musl patched for the 386, plus NetBSD's `sh` and file tools; static linking first.
+- Userland: a C library of our own or a BSD libc (open), plus NetBSD's `sh` and file tools; static linking first.
 - Emulators: QEMU (with GDB), Bochs (debugger), 86Box (a 386DX VLB machine with a POST card), DOSBox-X's debugger for DOS behaviour.
 - Disk images: `mkfs.ext3`, `e2fsck`, `mkfs.fat`, `mtools`.
 - Measurement: 8254 timer-based timing, port 80h codes on the POST card, the IPC tracer.
@@ -359,7 +362,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 **Test programs**
 
 - DOS: X-Wing (EMS, Sound Blaster, joystick), a text-mode app, a DPMI program, a Mode X demo.
-- Linux: our shell and file tools; later a process viewer.
+- POSIX: NetBSD's shell and file tools; later a process viewer.
 - Windows: Program Manager and the stock apps, in Standard then Enhanced mode.
 - Benchmarks: the hypotheses table above, on each CPU configuration.
 
@@ -401,6 +404,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-10-28 | Build order for the architecture experiments: Candidate A (servers in ring 3) first, with fewer address space switches as the strategy; Candidate B (ring 1 shared region) must beat it by a clear margin. Extending to other architectures is possible later but not a goal; no abstraction layer for it until a second architecture exists |
 | 2026-10-28 | Rings with batching are the core service interface from the first version: requests and results travel in shared-memory rings, many per kernel crossing, and a synchronous call is a batch of one. The aim is the most work for the fewest costly calls. This is a deliberate exception to the design principle of no abstraction before a measurement, like the experiment harness: the interface is the project's central idea, and the matching hypothesis is measured from the first IPC benchmark |
 | 2026-10-28 | Aims stated: try modern software engineering techniques on retro hardware, play the era's DOS games on our own kernel, and learn microkernels by combining the best of OS/2, BeOS, NT and Windows 3.1 Enhanced mode. The ring architecture is the first architecture to test, with a plain synchronous interface as the measured baseline; this refines the entry above, which made rings the core interface from the first version |
+| 2026-10-28 | A POSIX personality replaces the Linux personality. Target: popular Unix programs of the era, from source, not Linux specifically. The 2.0-era Linux system call table, the ELF loader and `/proc` are dropped, and musl is no longer assumed because it is tied to Linux system calls; the C library is open. Linux binary compatibility could return as an optional personality. Supersedes the 2026-10-27 entries on the Linux userland and musl |
 
 ## Glossary
 
@@ -440,7 +444,7 @@ Plain-language meanings of the terms used in this plan.
 | Microkernel | A kernel that does only the minimum, with other services in separate servers |
 | musl | A small C library, the layer between programs and system calls |
 | Page table | Map from a program's addresses to real memory |
-| Personality | A server that makes the system look like a particular OS (Linux, DOS, Windows) to programs |
+| Personality | A server that makes the system look like a particular OS (POSIX, DOS, Windows) to programs |
 | PIC | Programmable Interrupt Controller, the 8259 chip |
 | Redirector | DOS's interface for network-style drives, used here for shared ext3 directories |
 | Ring | CPU privilege level, 0 (kernel) to 3 (applications) |

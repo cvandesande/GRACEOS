@@ -1,6 +1,6 @@
 # GRACEOS: notes for agents and contributors
 
-GRACEOS is a hybrid kernel for a 386 PC that runs Linux, DOS and Windows 3.1 (386 Enhanced mode) programs side by side. It is a learning project and a test bench for architecture ideas. The name is written in capitals.
+GRACEOS is a hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.1 (386 Enhanced mode) programs side by side. It is a learning project and a test bench for architecture ideas. The name is written in capitals.
 
 ## Where to look
 
@@ -86,7 +86,7 @@ out:
 | --- | --- | --- |
 | 1 | Kernel core: IPC, scheduler, memory manager, interrupt and V86 paths | All of the above, plus: no recursion, every loop has a fixed upper bound, no allocation after boot, functions under about 60 lines, and assertions on the invariants of each non-trivial function |
 | 2 | Services: disk, filesystem, block cache, device virtualisation | All of the above; bounded loops where practical; fixed pools |
-| 3 | Personalities: DOS, Linux, Windows | All of the above, except that they may allocate from the memory manager, always with a checked result |
+| 3 | Personalities: POSIX, DOS, Windows | All of the above, except that they may allocate from the memory manager, always with a checked result |
 
 Strictness is for correctness. If a rule here makes a tier 1 function harder to read, say so rather than working around it.
 
