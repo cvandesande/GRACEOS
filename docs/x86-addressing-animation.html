@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GRACEOS: why segment registers exist</title>
+<style>
+:root {
+  --bg: #f7f7f4;
+  --card: #ffffff;
+  --text: #1c1c1a;
+  --muted: #66665f;
+  --line: #d6d6cf;
+  --accent: #2557c8;
+  --accent-soft: #dce6fb;
+  --code: #2557c8;
+  --code-soft: #dce6fb;
+  --data: #1b7a3a;
+  --data-soft: #dff2e5;
+  --stack: #b4560a;
+  --stack-soft: #fbe6d2;
+  --fail: #b3261e;
+  --fail-soft: #fadedb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141416;
+    --card: #1e1e22;
+    --text: #e8e8e4;
+    --muted: #9a9a92;
+    --line: #34343a;
+    --accent: #7ba0f5;
+    --accent-soft: #24324f;
+    --code: #7ba0f5;
+    --code-soft: #24324f;
+    --data: #66c486;
+    --data-soft: #1c3526;
+    --stack: #f0a35e;
+    --stack-soft: #46301b;
+    --fail: #f0827a;
+    --fail-soft: #43201d;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px 48px;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+main { max-width: 1040px; margin: 0 auto; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 36px 0 4px; }
+h3 { font-size: 0.8rem; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+p { margin: 0 0 12px; }
+code, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+.lead { color: var(--muted); max-width: 70ch; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+
+dl.words { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+dl.words dt { font-weight: 600; font-family: ui-monospace, Menlo, Consolas, monospace; }
+dl.words dd { margin: 0; }
+.swatch { display: inline-block; width: 0.85em; height: 0.85em; border-radius: 2px; margin-right: 4px; vertical-align: baseline; }
+.swatch.code { background: var(--code); }
+.swatch.data { background: var(--data); }
+.swatch.stack { background: var(--stack); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; margin: 14px 0; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 0.8rem; color: var(--muted); }
+input[type="text"], select {
+  font: inherit;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  width: 9.5em;
+}
+select { width: auto; }
+input[aria-invalid="true"] { border-color: var(--fail); }
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { button.primary { color: #101018; } }
+.progress { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.count { color: var(--muted); font-size: 0.9rem; }
+.error { color: var(--fail); min-height: 1.5em; margin: 0 0 6px; font-size: 0.9rem; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.chip { border: 2px solid var(--line); border-radius: 8px; padding: 4px 10px; min-width: 7.6rem; transition: background 0.3s, border-color 0.3s, opacity 0.3s; }
+.chip .chip-name { font-weight: 700; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.chip .chip-long { font-size: 0.75rem; color: var(--muted); }
+.chip .chip-value { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9rem; }
+.chip.code { border-color: var(--code); }
+.chip.data { border-color: var(--data); }
+.chip.stack { border-color: var(--stack); }
+.chip.spare { opacity: 0.4; }
+.chip.code.lit { background: var(--code-soft); }
+.chip.data.lit { background: var(--data-soft); }
+.chip.stack.lit { background: var(--stack-soft); }
+
+.ram { position: relative; margin: 8px 0 4px; }
+.pointers { position: relative; height: 40px; }
+.pointer { position: absolute; bottom: 0; transform: translateX(-50%); text-align: center; font-size: 0.85rem; font-weight: 700; line-height: 1.15; transition: left 0.8s ease, opacity 0.4s; opacity: 0; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.pointer.show { opacity: 1; }
+.pointer.code { color: var(--code); }
+.pointer.data { color: var(--data); }
+.pointer.stack { color: var(--stack); }
+.pointer span { display: block; }
+.ram-bar { position: relative; height: 58px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); overflow: hidden; }
+.region { position: absolute; top: 0; bottom: 0; width: 12.5%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem; opacity: 0; transition: left 0.8s ease, opacity 0.5s; border-left: 3px solid; border-right: 3px solid; }
+.region.show { opacity: 1; }
+.region.code { background: var(--code-soft); border-color: var(--code); }
+.region.data { background: var(--data-soft); border-color: var(--data); }
+.region.stack { background: var(--stack-soft); border-color: var(--stack); }
+.region.lit { box-shadow: inset 0 0 0 3px var(--text); }
+.marker { position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; background: var(--text); opacity: 0; transition: left 0.8s ease, opacity 0.4s; }
+.marker.show { opacity: 1; }
+.marks { position: relative; height: 30px; }
+.marker-label { position: absolute; top: 4px; transform: translateX(-50%); font-size: 0.85rem; font-weight: 600; white-space: nowrap; opacity: 0; transition: left 0.8s ease, opacity 0.4s; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.marker-label.show { opacity: 1; }
+.ticks { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; }
+.ram-caption { font-size: 0.8rem; color: var(--muted); margin-bottom: 2px; }
+
+.strip { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 1rem; margin: 10px 0 6px; }
+.slot { border: 2px dashed var(--line); border-radius: 8px; padding: 4px 12px; text-align: center; opacity: 0.3; transition: opacity 0.4s, border-color 0.4s; min-width: 7rem; }
+.slot.show { opacity: 1; border-style: solid; border-color: var(--text); }
+.slot .slot-label { display: block; font-size: 0.72rem; color: var(--muted); }
+.slot .slot-value { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
+.strip .glyph { font-size: 1.2rem; color: var(--muted); }
+
+.caption { margin-top: 14px; min-height: 8em; }
+.caption .title { font-weight: 600; font-size: 1.05rem; }
+.caption.fail { border-color: var(--fail); }
+.caption.fail .title { color: var(--fail); }
+
+table.mini { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin: 6px 0 12px; }
+table.mini th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 6px 4px; font-size: 0.75rem; }
+table.mini td { padding: 5px 6px; border-top: 1px solid var(--line); transition: background 0.3s; }
+table.mini tr.active td { background: var(--accent-soft); }
+table.mini tr.active.bad td { background: var(--fail-soft); }
+.notes { margin-top: 22px; color: var(--muted); font-size: 0.88rem; }
+.notes li { margin-bottom: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chip, .pointer, .region, .marker, .marker-label, .slot, td { transition: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Why segment registers exist</h1>
+  <p class="lead">A running program is made of three kinds of memory. The segment registers are how the CPU knows where each one is. Part 1 shows that in real mode, where the registers hold plain numbers. Part 2 shows protected mode, where the same registers hold tickets for a table the OS controls.</p>
+
+  <div class="card">
+    <h3>The words used here</h3>
+    <dl class="words">
+      <dt><span class="swatch code"></span>code</dt><dd>The program's instructions.</dd>
+      <dt><span class="swatch data"></span>data</dt><dd>Its variables and tables.</dd>
+      <dt><span class="swatch stack"></span>stack</dt><dd>Scratch space for function calls, local variables and return addresses.</dd>
+      <dt>CS</dt><dd>Code Segment: a register holding where the code starts.</dd>
+      <dt>DS</dt><dd>Data Segment: where the data starts.</dd>
+      <dt>SS</dt><dd>Stack Segment: where the stack starts.</dd>
+      <dt>ES, FS, GS</dt><dd>Spare segment registers (ES is used by string copies, FS and GS are free for the OS). Not used in this example.</dd>
+      <dt>offset</dt><dd>A distance from the start of a region. Instructions contain offsets, not full addresses.</dd>
+    </dl>
+  </div>
+
+  <h2>Part 1: real mode, where the registers hold plain numbers</h2>
+  <p>A loader has put one program into RAM. Step through what happens when it runs an instruction.</p>
+
+  <div class="card controls">
+    <div class="field">
+      <label for="instruction">Instruction the program runs</label>
+      <select id="instruction">
+        <option value="read">mov eax, [0x1000] &mdash; read a variable</option>
+        <option value="push">push eax &mdash; put a value on the stack</option>
+        <option value="fetch">fetch the next instruction</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>CPU: segment registers</h3>
+    <div class="chips" id="chips-real"></div>
+    <h3 style="margin-top:14px">RAM</h3>
+    <div class="ram-caption" id="ram-caption-real">0 to 512 KiB</div>
+    <div class="ram" id="ram-real"></div>
+    <div class="strip" id="strip">
+      <div class="slot" id="slot-start"><span class="slot-label" id="slot-start-label">region start</span><span class="slot-value" id="slot-start-value"></span></div>
+      <span class="glyph">+</span>
+      <div class="slot" id="slot-offset"><span class="slot-label">offset (from the instruction)</span><span class="slot-value" id="slot-offset-value"></span></div>
+      <span class="glyph">=</span>
+      <div class="slot" id="slot-address"><span class="slot-label">address used</span><span class="slot-value" id="slot-address-value"></span></div>
+    </div>
+  </div>
+
+  <div class="card caption" id="caption-real" aria-live="polite"></div>
+  <div class="progress">
+    <button class="primary" id="real-step">Step</button>
+    <button id="real-play">Play</button>
+    <button id="real-reset">Reset</button>
+    <span class="count" id="real-count"></span>
+  </div>
+
+  <h2>Part 2: protected mode, where the registers hold tickets</h2>
+  <p>Same program, same RAM. Now the OS has filled in a table, and CS, DS and SS hold the number of a table entry instead of part of an address. Choose a value for DS and an offset, and see what the CPU does.</p>
+
+  <div class="card controls">
+    <div class="field">
+      <label for="ds-value">DS (hex, 16 bits)</label>
+      <input id="ds-value" type="text" value="0x0010" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="offset-value">Offset (hex)</label>
+      <input id="offset-value" type="text" value="0x00001000" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="preset">Try</label>
+      <select id="preset">
+        <option value="0x0010,0x00001000">DS is the data ticket, offset 0x1000</option>
+        <option value="0x0010,0x00012345">Offset past the end of the data region</option>
+        <option value="0x0008,0x00001000">DS is the code ticket (reading code is allowed)</option>
+        <option value="0x0028,0x00001000">DS holds a ticket that is not in the table</option>
+        <option value="0x0000,0x00001000">DS is zero (the null ticket)</option>
+      </select>
+    </div>
+  </div>
+  <p class="error" id="error" role="alert"></p>
+
+  <div class="card">
+    <h3>CPU: segment registers</h3>
+    <div class="chips" id="chips-protected"></div>
+    <h3 style="margin-top:14px">Table the OS filled in (the GDT)</h3>
+    <table class="mini">
+      <thead><tr><th>Entry</th><th>Ticket</th><th>Region starts at (base)</th><th>Size (limit)</th><th>What it is</th></tr></thead>
+      <tbody id="gdt-body"></tbody>
+    </table>
+    <h3>RAM</h3>
+    <div class="ram-caption">0 to 512 KiB</div>
+    <div class="ram" id="ram-protected"></div>
+  </div>
+
+  <div class="card caption" id="caption-protected" aria-live="polite"></div>
+  <div class="progress">
+    <button class="primary" id="protected-step">Step</button>
+    <button id="protected-play">Play</button>
+    <button id="protected-reset">Reset</button>
+    <span class="count" id="protected-count"></span>
+  </div>
+
+  <ul class="notes">
+    <li>The table in Part 2 is an example for one program, not the kernel's. The real one in <code>src/gdt.c</code> has only a null entry, one code entry and one data entry, and both have base 0 and a 4 GiB size. So in our kernel CS, DS and SS all point at one region that covers all of memory, and paging does the protecting instead.</li>
+    <li>Why still use segments at all in real mode: the 8086 had 16-bit registers, which reach only 64 KiB. Adding a segment start to a 16-bit offset let programs reach 1 MiB.</li>
+    <li>Simplified: DS is used for a read at the most privileged ring, there is no LDT, and a failed check is shown as a general protection fault (<code>#GP</code>). When the CPU loads DS it keeps a hidden copy of the table entry, which <a href="gdt-animation.html">the GDT animation</a> shows step by step.</li>
+    <li>In real mode the segment start is the register value times 16. That is why 0x2000 becomes 0x20000.</li>
+  </ul>
+</main>
+
+<script>
+"use strict";
+
+var PLAY_INTERVAL_MS = 1900;
+var MEMORY_SIZE = 0x80000;
+var REGION_SIZE = 0x10000;
+var MOVE_DISTANCE = 0x30000;
+
+var REGION_KEYS = ["code", "data", "stack"];
+var REGISTER_FOR_REGION = { code: "CS", data: "DS", stack: "SS" };
+var LONG_NAME = { CS: "Code Segment", DS: "Data Segment", SS: "Stack Segment", ES: "Extra Segment", FS: "spare", GS: "spare" };
+var REAL_START = { code: 0x10000, data: 0x20000, stack: 0x30000 };
+
+var INSTRUCTIONS = {
+  read: {
+    text: "mov eax, [0x1000]", kind: "reads data", region: "data", offset: 0x1000,
+    offsetText: "The instruction says only <code>[0x1000]</code>: \"the bytes 0x1000 into my data\". It does not say where the data is, because the program does not know where it was loaded.",
+    whyRegister: "The CPU picks DS by itself, because this instruction reads data. The program does not have to name it."
+  },
+  push: {
+    text: "push eax", kind: "uses the stack", region: "stack", offset: 0xFFFC,
+    offsetText: "The stack pointer (ESP) starts at the top of the stack region and drops by 4 before the value is stored, so the offset is 0xFFFC. The program only knows the distance from the start of its stack.",
+    whyRegister: "The CPU picks SS by itself, because every stack operation goes through the stack segment."
+  },
+  fetch: {
+    text: "fetch the next instruction", kind: "fetches code", region: "code", offset: 0x0040,
+    offsetText: "The instruction pointer (EIP) holds 0x0040: the next instruction is 0x40 bytes into the code. The program only knows the distance from the start of its code.",
+    whyRegister: "The CPU picks CS by itself, because it always fetches instructions through the code segment."
+  }
+};
+
+function byId(id) { return document.getElementById(id); }
+
+function hex(value, digits) {
+  var text = (value >>> 0).toString(16).toUpperCase();
+  while (text.length < digits) { text = "0" + text; }
+  return "0x" + text;
+}
+
+function parseHex(text, maxDigits) {
+  var pattern = new RegExp("^(0x)?[0-9a-f]{1,%d}$".replace("%d", maxDigits), "i");
+  var trimmed = text.trim();
+  if (!pattern.test(trimmed)) { return null; }
+  return parseInt(trimmed.replace(/^0x/i, ""), 16) >>> 0;
+}
+
+function percent(address) { return (address / MEMORY_SIZE * 100) + "%"; }
+
+function Stepper(buttons, countElement, getTotal, onChange) {
+  var self = this;
+  var timer = null;
+  self.current = 0;
+
+  function stopPlaying() {
+    if (timer !== null) { window.clearInterval(timer); timer = null; }
+    buttons.play.textContent = "Play";
+  }
+  function advance() {
+    if (self.current < getTotal()) { self.current += 1; self.refresh(); }
+    if (self.current >= getTotal()) { stopPlaying(); }
+  }
+  self.reset = function () { stopPlaying(); self.current = 0; self.refresh(); };
+  self.refresh = function () {
+    var total = getTotal();
+    onChange(self.current);
+    buttons.step.disabled = total === 0 || self.current >= total;
+    buttons.play.disabled = total === 0;
+    countElement.textContent = total === 0 ? "" : (self.current === 0 ? total + " steps" : "Step " + self.current + " of " + total);
+  };
+  buttons.step.addEventListener("click", function () { stopPlaying(); advance(); });
+  buttons.reset.addEventListener("click", self.reset);
+  buttons.play.addEventListener("click", function () {
+    if (timer !== null) { stopPlaying(); return; }
+    if (self.current >= getTotal()) { self.current = 0; self.refresh(); }
+    buttons.play.textContent = "Pause";
+    advance();
+    if (self.current < getTotal()) { timer = window.setInterval(advance, PLAY_INTERVAL_MS); }
+  });
+}
+
+function buildChips(containerId) {
+  var container = byId(containerId);
+  var chips = {};
+  ["CS", "DS", "SS", "ES", "FS", "GS"].forEach(function (name) {
+    var key = name === "CS" ? "code" : (name === "DS" ? "data" : (name === "SS" ? "stack" : "spare"));
+    var chip = document.createElement("div");
+    chip.className = "chip " + key;
+    chip.innerHTML = "<div class=\"chip-name\">" + name + "</div><div class=\"chip-long\">" + LONG_NAME[name] +
+      (key === "spare" ? " (unused here)" : "") + "</div><div class=\"chip-value\"></div>";
+    container.appendChild(chip);
+    chips[name] = { element: chip, value: chip.querySelector(".chip-value") };
+  });
+  return chips;
+}
+
+function buildScene(containerId) {
+  var container = byId(containerId);
+  var scene = { regions: {}, pointers: {}, marker: null, markerLabel: null };
+  var html = "<div class=\"pointers\" id=\"" + containerId + "-pointers\"></div><div class=\"ram-bar\" id=\"" + containerId + "-bar\"></div>" +
+    "<div class=\"marks\" id=\"" + containerId + "-marks\"></div><div class=\"ticks\"><span>0</span><span>0x20000</span><span>0x40000</span><span>0x60000</span><span>0x80000</span></div>";
+  var pointerRow;
+  var bar;
+  var marks;
+  container.innerHTML = html;
+  pointerRow = byId(containerId + "-pointers");
+  bar = byId(containerId + "-bar");
+  marks = byId(containerId + "-marks");
+  REGION_KEYS.forEach(function (key) {
+    var region = document.createElement("div");
+    var pointer = document.createElement("div");
+    region.className = "region " + key;
+    region.textContent = key;
+    bar.appendChild(region);
+    scene.regions[key] = region;
+    pointer.className = "pointer " + key;
+    pointer.innerHTML = "<span class=\"pointer-name\"></span><span>&#9660;</span>";
+    pointerRow.appendChild(pointer);
+    scene.pointers[key] = { element: pointer, name: pointer.querySelector(".pointer-name") };
+  });
+  scene.marker = document.createElement("div");
+  scene.marker.className = "marker";
+  bar.appendChild(scene.marker);
+  scene.markerLabel = document.createElement("div");
+  scene.markerLabel.className = "marker-label";
+  marks.appendChild(scene.markerLabel);
+  return scene;
+}
+
+function placeRegions(scene, starts, visible, litKey) {
+  REGION_KEYS.forEach(function (key) {
+    scene.regions[key].style.left = percent(starts[key]);
+    scene.regions[key].classList.toggle("show", visible);
+    scene.regions[key].classList.toggle("lit", litKey === key);
+  });
+}
+
+function placePointer(scene, key, start, visible, label) {
+  scene.pointers[key].element.style.left = percent(start);
+  scene.pointers[key].element.classList.toggle("show", visible);
+  scene.pointers[key].name.textContent = label;
+}
+
+function placeMarker(scene, address, visible, label) {
+  if (address !== null) {
+    scene.marker.style.left = percent(address);
+    scene.markerLabel.style.left = percent(address);
+    scene.markerLabel.textContent = label;
+  }
+  scene.marker.classList.toggle("show", visible);
+  scene.markerLabel.classList.toggle("show", visible);
+}
+
+function setCaption(element, title, text, failed) {
+  element.innerHTML = "<div class=\"title\">" + title + "</div><p>" + text + "</p>";
+  element.classList.toggle("fail", failed);
+}
+
+/* Part 1 */
+
+var real = {
+  chips: buildChips("chips-real"),
+  scene: buildScene("ram-real"),
+  select: byId("instruction"),
+  caption: byId("caption-real"),
+  slots: { start: byId("slot-start"), offset: byId("slot-offset"), address: byId("slot-address") },
+  startLabel: byId("slot-start-label"),
+  startValue: byId("slot-start-value"),
+  offsetValue: byId("slot-offset-value"),
+  addressValue: byId("slot-address-value")
+};
+var REAL_STEP_COUNT = 6;
+
+function renderReal(step) {
+  var instruction = INSTRUCTIONS[real.select.value];
+  var shift = step >= 6 ? MOVE_DISTANCE : 0;
+  var starts = { code: REAL_START.code + shift, data: REAL_START.data + shift, stack: REAL_START.stack + shift };
+  var chosenKey = instruction.region;
+  var chosenRegister = REGISTER_FOR_REGION[chosenKey];
+  var address = starts[chosenKey] + instruction.offset;
+  var title = "";
+  var text = "";
+  var name;
+
+  for (name in real.chips) {
+    if (Object.prototype.hasOwnProperty.call(real.chips, name)) {
+      real.chips[name].value.textContent = "";
+      real.chips[name].element.classList.remove("lit");
+    }
+  }
+  REGION_KEYS.forEach(function (key) {
+    var register = REGISTER_FOR_REGION[key];
+    real.chips[register].value.textContent = step >= 2 ? hex(starts[key] >> 4, 4) : "not set yet";
+    real.chips[register].element.classList.toggle("lit", step === 2 || (step >= 4 && key === chosenKey));
+    placePointer(real.scene, key, starts[key], step >= 2, register);
+  });
+  ["ES", "FS", "GS"].forEach(function (spare) { real.chips[spare].value.textContent = "0x0000"; });
+  placeRegions(real.scene, starts, step >= 1, step >= 4 ? chosenKey : null);
+  placeMarker(real.scene, address, step >= 5, hex(address, 5));
+
+  real.slots.offset.classList.toggle("show", step >= 3);
+  real.offsetValue.textContent = hex(instruction.offset, 4);
+  real.slots.start.classList.toggle("show", step >= 4);
+  real.startLabel.textContent = chosenRegister + " &times; 16 = region start".replace("&times;", "×");
+  real.startValue.textContent = hex(starts[chosenKey], 5);
+  real.slots.address.classList.toggle("show", step >= 5);
+  real.addressValue.textContent = hex(address, 5);
+
+  if (step === 0) {
+    title = "Press Step to begin";
+    text = "You will see one program in RAM, the three registers that remember where its parts are, and why an instruction only needs a distance.";
+  } else if (step === 1) {
+    title = "One program in RAM";
+    text = "A loader has copied the program into memory. It is three regions, each 64 KiB: <strong>code</strong> at 0x10000, <strong>data</strong> at 0x20000 and <strong>stack</strong> at 0x30000.";
+  } else if (step === 2) {
+    title = "Three registers remember where the regions start";
+    text = "CS holds 0x1000, DS holds 0x2000 and SS holds 0x3000. In real mode the CPU multiplies each by 16 to get a start address: 0x1000 &times; 16 = 0x10000, and so on. The program's own code never needs to know these numbers.";
+  } else if (step === 3) {
+    title = "The program runs: " + instruction.text;
+    text = instruction.offsetText;
+  } else if (step === 4) {
+    title = "The CPU chooses " + chosenRegister;
+    text = instruction.whyRegister + " " + chosenRegister + " says this region starts at " + hex(starts[chosenKey], 5) + ".";
+  } else if (step === 5) {
+    title = "Start + offset = the address";
+    text = hex(starts[chosenKey], 5) + " + " + hex(instruction.offset, 4) + " = <strong>" + hex(address, 5) + "</strong>. That is the byte the instruction touches.";
+  } else {
+    title = "Load the same program somewhere else";
+    text = "The loader moves the program to a different place and changes only CS, DS and SS. The program is untouched and still " + instruction.kind +
+      " in exactly the same way (<code>" + instruction.text + "</code>), but it now touches <strong>" + hex(address, 5) +
+      "</strong>. This is the problem segment registers solve: a program that talks only in distances can be loaded anywhere.";
+  }
+  setCaption(real.caption, title, text, false);
+}
+
+/* Part 2 */
+
+var PROTECTED_ENTRIES = [
+  { name: "null (never usable)", key: null, base: 0, limit: 0 },
+  { name: "code, readable", key: "code", base: 0x10000, limit: 0xFFFF },
+  { name: "data, writable", key: "data", base: 0x20000, limit: 0xFFFF },
+  { name: "stack, writable", key: "stack", base: 0x30000, limit: 0xFFFF }
+];
+var PROTECTED_STARTS = { code: 0x10000, data: 0x20000, stack: 0x30000 };
+
+var prot = {
+  chips: buildChips("chips-protected"),
+  scene: buildScene("ram-protected"),
+  gdtBody: byId("gdt-body"),
+  caption: byId("caption-protected"),
+  dsInput: byId("ds-value"),
+  offsetInput: byId("offset-value"),
+  preset: byId("preset"),
+  error: byId("error"),
+  plan: null
+};
+
+function planProtected(selector, offset) {
+  var index = selector >> 3;
+  var tableBit = (selector >> 2) & 1;
+  var requested = selector & 3;
+  var steps = [];
+  var entry;
+  var address;
+
+  steps.push({ title: "The registers now hold tickets",
+    text: "The OS has filled in a table with one entry per region: where the region starts (base) and how big it is (limit). CS, DS and SS hold <em>ticket numbers</em> for those entries, not parts of an address. The program can load a different number into DS, but it cannot change the table.",
+    row: null, lit: null, base: false, address: null, fail: false });
+  steps.push({ title: "The program runs: mov eax, [" + hex(offset, 8) + "]",
+    text: "It reads data, so the CPU uses DS, which holds " + hex(selector, 4) + ". The instruction still gives only an offset. To find where that is, the CPU has to look up the ticket first.",
+    row: null, lit: null, base: false, address: null, fail: false });
+
+  if (tableBit === 1) {
+    steps.push({ title: "The CPU refuses", text: "Bit 2 of " + hex(selector, 4) + " is 1, which means \"use a different table (the LDT)\". There is none. The CPU raises a general protection fault (#GP), stops the instruction and hands control to the OS, which usually ends the program.", row: null, lit: null, base: false, address: null, fail: true });
+    return steps;
+  }
+  if (index === 0) {
+    steps.push({ title: "The CPU refuses", text: "Entry 0 is the null entry, reserved so that a register left at zero by mistake can never be used. The CPU raises a general protection fault (#GP).", row: 0, lit: null, base: false, address: null, fail: true });
+    return steps;
+  }
+  if (index >= PROTECTED_ENTRIES.length) {
+    steps.push({ title: "The CPU refuses", text: "Ticket " + hex(selector, 4) + " is entry " + index + ", but the table has only " + PROTECTED_ENTRIES.length + " entries (0 to " + (PROTECTED_ENTRIES.length - 1) + "). The program cannot invent a region the OS did not create. The CPU raises a general protection fault (#GP).", row: null, lit: null, base: false, address: null, fail: true });
+    return steps;
+  }
+  if (requested !== 0) {
+    steps.push({ title: "The CPU refuses", text: "The ticket asks for privilege level " + requested + " but the entry is level 0, so the CPU raises a general protection fault (#GP).", row: index, lit: null, base: false, address: null, fail: true });
+    return steps;
+  }
+
+  entry = PROTECTED_ENTRIES[index];
+  steps.push({ title: "The ticket names entry " + index + ": " + entry.name,
+    text: "Entry " + index + " says this region starts at " + hex(entry.base, 5) + " and is " + hex(entry.limit + 1, 5) + " bytes long. This is where the CPU got the start address that real mode computed from DS &times; 16.",
+    row: index, lit: entry.key, base: true, address: null, fail: false });
+
+  if (offset > entry.limit) {
+    steps.push({ title: "The CPU refuses", text: "The offset " + hex(offset, 8) + " is beyond the region's size, " + hex(entry.limit + 1, 5) + ". The program is trying to reach outside its own region, so the CPU raises a general protection fault (#GP). In real mode this access would have succeeded.", row: index, lit: entry.key, base: true, address: null, fail: true });
+    return steps;
+  }
+  address = entry.base + offset;
+  steps.push({ title: "Inside the limit: start + offset = the address",
+    text: "The offset is within the region, so the CPU adds the base: " + hex(entry.base, 5) + " + " + hex(offset, 8) + " = <strong>" + hex(address, 5) + "</strong>. Same sum as real mode, but only after the table said it was allowed.",
+    row: index, lit: entry.key, base: true, address: address, fail: false });
+  return steps;
+}
+
+function buildTable() {
+  var html = "";
+  PROTECTED_ENTRIES.forEach(function (entry, index) {
+    html += "<tr><td class=\"mono\">" + index + "</td><td class=\"mono\">" + hex(index * 8, 4) + "</td><td class=\"mono\">" +
+      (entry.key === null ? "-" : hex(entry.base, 5)) + "</td><td class=\"mono\">" +
+      (entry.key === null ? "-" : hex(entry.limit + 1, 5) + " bytes") + "</td><td>" +
+      (entry.key === null ? "" : "<span class=\"swatch " + entry.key + "\"></span>") + entry.name + "</td></tr>";
+  });
+  prot.gdtBody.innerHTML = html;
+}
+
+function renderProtected(step) {
+  var rows = prot.gdtBody.querySelectorAll("tr");
+  var current = prot.plan === null || step === 0 ? null : prot.plan[step - 1];
+  var selector = parseHex(prot.dsInput.value, 4);
+  var i;
+
+  prot.chips.CS.value.textContent = "0x0008";
+  prot.chips.SS.value.textContent = "0x0018";
+  prot.chips.DS.value.textContent = selector === null ? "?" : hex(selector, 4);
+  ["ES", "FS", "GS"].forEach(function (spare) { prot.chips[spare].value.textContent = "0x0000"; });
+  prot.chips.DS.element.classList.toggle("lit", step >= 2);
+  prot.chips.CS.element.classList.toggle("lit", step === 1);
+  prot.chips.SS.element.classList.toggle("lit", step === 1);
+
+  for (i = 0; i < rows.length; i += 1) {
+    var active = current !== null && current.row === i;
+    rows[i].classList.toggle("active", active);
+    rows[i].classList.toggle("bad", active && current.fail);
+  }
+  placeRegions(prot.scene, PROTECTED_STARTS, step >= 1 && prot.plan !== null, current === null ? null : current.lit);
+  REGION_KEYS.forEach(function (key) {
+    var showBase = current !== null && current.base && current.lit === key;
+    placePointer(prot.scene, key, PROTECTED_STARTS[key], showBase, "DS base");
+  });
+  placeMarker(prot.scene, current === null ? null : current.address, current !== null && current.address !== null,
+    current === null || current.address === null ? "" : hex(current.address, 5));
+
+  if (prot.plan === null) {
+    setCaption(prot.caption, "Fix the input above", "DS needs 1 to 4 hex digits and the offset 1 to 8.", true);
+  } else if (current === null) {
+    setCaption(prot.caption, "Press Step to begin", "The program is the same as in Part 1. What changes is what the registers hold.", false);
+  } else {
+    setCaption(prot.caption, current.title, current.text, current.fail);
+  }
+}
+
+function rebuildProtected() {
+  var selector = parseHex(prot.dsInput.value, 4);
+  var offset = parseHex(prot.offsetInput.value, 8);
+  var message = "";
+  prot.dsInput.setAttribute("aria-invalid", selector === null ? "true" : "false");
+  prot.offsetInput.setAttribute("aria-invalid", offset === null ? "true" : "false");
+  if (selector === null) { message = "DS must be 1 to 4 hex digits."; }
+  else if (offset === null) { message = "The offset must be 1 to 8 hex digits."; }
+  prot.error.textContent = message;
+  prot.plan = message === "" ? planProtected(selector, offset) : null;
+  protectedStepper.reset();
+}
+
+/* Wiring */
+
+buildTable();
+
+var realStepper = new Stepper(
+  { step: byId("real-step"), play: byId("real-play"), reset: byId("real-reset") },
+  byId("real-count"), function () { return REAL_STEP_COUNT; }, renderReal);
+var protectedStepper = new Stepper(
+  { step: byId("protected-step"), play: byId("protected-play"), reset: byId("protected-reset") },
+  byId("protected-count"), function () { return prot.plan === null ? 0 : prot.plan.length; }, renderProtected);
+
+real.select.addEventListener("change", function () { realStepper.reset(); });
+prot.dsInput.addEventListener("input", rebuildProtected);
+prot.offsetInput.addEventListener("input", rebuildProtected);
+prot.preset.addEventListener("change", function () {
+  var parts = prot.preset.value.split(",");
+  prot.dsInput.value = parts[0];
+  prot.offsetInput.value = parts[1];
+  rebuildProtected();
+});
+
+realStepper.reset();
+rebuildProtected();
+</script>
+</body>
+</html>

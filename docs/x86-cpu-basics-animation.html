@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GRACEOS: how a 386 CPU works</title>
+<style>
+:root {
+  --bg: #f7f7f4;
+  --card: #ffffff;
+  --text: #1c1c1a;
+  --muted: #66665f;
+  --line: #d6d6cf;
+  --accent: #2557c8;
+  --accent-soft: #dce6fb;
+  --warm: #b4560a;
+  --warm-soft: #fbe6d2;
+  --good: #1b7a3a;
+  --good-soft: #dff2e5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141416;
+    --card: #1e1e22;
+    --text: #e8e8e4;
+    --muted: #9a9a92;
+    --line: #34343a;
+    --accent: #7ba0f5;
+    --accent-soft: #24324f;
+    --warm: #f0a35e;
+    --warm-soft: #46301b;
+    --good: #66c486;
+    --good-soft: #1c3526;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px 48px;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+main { max-width: 1040px; margin: 0 auto; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 36px 0 4px; }
+h3 { font-size: 0.8rem; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+p { margin: 0 0 12px; }
+code, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+.lead { color: var(--muted); max-width: 70ch; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+
+dl.words { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+dl.words dt { font-weight: 600; font-family: ui-monospace, Menlo, Consolas, monospace; }
+dl.words dd { margin: 0; }
+
+.lesson-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 14px; align-items: start; }
+@media (max-width: 860px) { .lesson-grid { grid-template-columns: 1fr; } }
+
+.phases { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.pill { border: 2px solid var(--line); border-radius: 16px; padding: 2px 12px; font-size: 0.9rem; transition: background 0.3s, border-color 0.3s; }
+.pill.lit { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+.phases .arrow { color: var(--muted); }
+.decoder { border: 2px dashed var(--line); border-radius: 8px; padding: 6px 12px; margin-bottom: 12px; min-height: 4.1rem; }
+.decoder .decoder-label { font-size: 0.72rem; color: var(--muted); }
+.decoder .decoder-bytes { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.05rem; min-height: 1.6em; }
+.decoder .decoder-text { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; color: var(--accent); min-height: 1.5em; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 2px solid var(--line); border-radius: 8px; padding: 4px 10px; min-width: 8.2rem; transition: background 0.3s, border-color 0.3s; }
+.chip .chip-name { font-weight: 700; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.chip .chip-long { font-size: 0.75rem; color: var(--muted); }
+.chip .chip-value { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1rem; }
+.chip.lit { background: var(--accent-soft); border-color: var(--accent); }
+
+.memory { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9rem; }
+.mheading { font-family: system-ui, sans-serif; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px; }
+.mheading:first-child { margin-top: 0; }
+.mrow { display: grid; grid-template-columns: 3.4rem 4.6rem minmax(0, 1fr); gap: 6px; align-items: center; padding: 4px 6px; border: 2px solid transparent; border-radius: 6px; transition: background 0.3s, border-color 0.3s; }
+.mrow .mptr { color: var(--accent); font-weight: 700; font-size: 0.8rem; }
+.mrow .maddr { color: var(--muted); }
+.mrow .mcontent { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+.mrow .mbytes { letter-spacing: 0.04em; }
+.mrow .mtext { color: var(--accent); font-weight: 600; }
+.mrow .mnote { font-family: system-ui, sans-serif; color: var(--muted); font-size: 0.82rem; }
+.mrow.read { background: var(--accent-soft); border-color: var(--accent); }
+.mrow.write { background: var(--warm-soft); border-color: var(--warm); }
+
+.caption { margin-top: 14px; min-height: 8.5em; }
+.caption .title { font-weight: 600; font-size: 1.05rem; }
+.progress { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.count { color: var(--muted); font-size: 0.9rem; }
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { button.primary { color: #101018; } }
+
+.pairs { display: grid; gap: 8px; }
+.pair-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: center; border: 2px solid var(--line); border-radius: 8px; padding: 6px 12px; transition: background 0.3s, border-color 0.3s; }
+@media (max-width: 640px) { .pair-row { grid-template-columns: 1fr; gap: 2px; } }
+.pair-row.lit { background: var(--accent-soft); border-color: var(--accent); }
+.pair-row .pair-what { font-weight: 600; }
+.pair-row .pair-pair { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
+.pair-row .pair-example { color: var(--muted); font-size: 0.88rem; }
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+@media (max-width: 640px) { .modes { grid-template-columns: 1fr; } }
+.mode-box { border: 2px solid var(--line); border-radius: 8px; padding: 8px 12px; opacity: 0.35; transition: opacity 0.4s, border-color 0.4s; }
+.mode-box.show { opacity: 1; }
+.mode-box .mode-bit { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
+.mode-box.real.show { border-color: var(--warm); }
+.mode-box.protected.show { border-color: var(--good); }
+
+.notes { margin-top: 22px; color: var(--muted); font-size: 0.88rem; }
+.notes li { margin-bottom: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .pill, .chip, .mrow, .pair-row, .mode-box { transition: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>How a 386 CPU works</h1>
+  <p class="lead">Pre-reading for the GDT animations. No earlier knowledge of the CPU is assumed. Each part runs a tiny program one step at a time, so you can see what the CPU does and what changes. Press Step in each part; Play runs it for you.</p>
+
+  <div class="card">
+    <h3>The words used here</h3>
+    <dl class="words">
+      <dt>CPU</dt><dd>The chip that runs programs. It does one small thing at a time, very fast.</dd>
+      <dt>memory</dt><dd>A long row of numbered boxes outside the CPU, each holding one byte (a number from 0 to 255). The box number is its <strong>address</strong>. Both the program and its data live here.</dd>
+      <dt>instruction</dt><dd>One small step the CPU can do, such as "add 3 to this". In memory it is a few bytes.</dd>
+      <dt>register</dt><dd>A named storage slot inside the CPU. Registers are much faster than memory, and most work happens in them.</dd>
+      <dt>EAX, ECX, ESP...</dt><dd>The 386's 32-bit registers. A 32-bit register holds a number up to about 4 billion.</dd>
+      <dt>EIP</dt><dd>The instruction pointer: the address of the next instruction to run.</dd>
+      <dt>flag</dt><dd>A single yes-or-no bit the CPU sets after some instructions, for example "the last result was zero". The flags sit together in a register called EFLAGS.</dd>
+      <dt>stack</dt><dd>A region of memory used like a pile of plates: the CPU puts values on top and takes them back off.</dd>
+    </dl>
+  </div>
+
+  <h2>Part 1: the CPU is a loop</h2>
+  <p>The CPU repeats three things forever: <strong>fetch</strong> the instruction EIP points to, <strong>decode</strong> what it means, <strong>execute</strong> it. This program puts 5 in EAX, adds 3, and stores the result in memory.</p>
+  <div id="lesson-fetch"></div>
+
+  <h2>Part 2: making decisions with flags and jumps</h2>
+  <p>Normally EIP just moves to the next instruction. A <strong>jump</strong> changes EIP instead, and a conditional jump does so only if a flag says to. That is how loops and if-statements work. This program counts ECX down from 3.</p>
+  <div id="lesson-flags"></div>
+
+  <h2>Part 3: the stack</h2>
+  <p>The stack is where the CPU keeps values it wants to get back later. ESP points at the top. It will matter again when we handle interrupts and faults, because the CPU saves where it was on the stack.</p>
+  <div id="lesson-stack"></div>
+
+  <h2>Part 4: where this leads to the GDT</h2>
+  <p>Parts 1 to 3 treated an address as a single number. On the 386 it never is.</p>
+
+  <div class="card">
+    <div class="pairs">
+      <div class="pair-row" id="pair-fetch"><span class="pair-what">Fetch an instruction</span><span class="pair-pair">CS : EIP</span><span class="pair-example">Part 1: EIP held 0x1000</span></div>
+      <div class="pair-row" id="pair-data"><span class="pair-what">Read or write data</span><span class="pair-pair">DS : offset</span><span class="pair-example">Part 1: the store went to offset 0x2000</span></div>
+      <div class="pair-row" id="pair-stack"><span class="pair-what">Push or pop</span><span class="pair-pair">SS : ESP</span><span class="pair-example">Part 3: ESP held 0x8FFC</span></div>
+    </div>
+    <div class="modes">
+      <div class="mode-box real" id="mode-real"><div class="mode-bit">CR0 bit 0 = 0: real mode</div>The segment register is part of an address. No table, no checks. The CPU starts here at power-on.</div>
+      <div class="mode-box protected" id="mode-protected"><div class="mode-bit">CR0 bit 0 = 1: protected mode</div>The segment register is a ticket into a table, the GDT, that the OS fills in. The CPU checks every access against it.</div>
+    </div>
+  </div>
+  <div class="card caption" id="caption-modes" aria-live="polite"></div>
+  <div class="progress">
+    <button class="primary" id="modes-step">Step</button>
+    <button id="modes-play">Play</button>
+    <button id="modes-reset">Reset</button>
+    <span class="count" id="modes-count"></span>
+  </div>
+
+  <ul class="notes">
+    <li>A real 386 overlaps these stages: while one instruction executes it is already fetching and decoding the next. The animation shows the order in which things logically happen, not the timing.</li>
+    <li>The instruction bytes in Parts 1 to 3 are the real 32-bit x86 encodings of those instructions.</li>
+    <li>Numbers are stored low byte first (little-endian), so 5 appears in memory as <code>05 00 00 00</code>. This is how x86 always works.</li>
+    <li>Only a handful of the CPU's registers appear here. The segment registers, CR0 and the GDT register are the ones the next pages are about.</li>
+  </ul>
+</main>
+
+<script>
+"use strict";
+
+var PLAY_INTERVAL_MS = 2300;
+
+function byId(id) { return document.getElementById(id); }
+
+function hex(value, digits) {
+  var text = (value >>> 0).toString(16).toUpperCase();
+  while (text.length < digits) { text = "0" + text; }
+  return "0x" + text;
+}
+
+function hexByte(value) { return (value < 16 ? "0" : "") + value.toString(16).toUpperCase(); }
+
+function bytesText(bytes) { return bytes.map(hexByte).join(" "); }
+
+function copy(value) { return JSON.parse(JSON.stringify(value)); }
+
+function Stepper(buttons, countElement, getTotal, onChange) {
+  var self = this;
+  var timer = null;
+  self.current = 0;
+
+  function stopPlaying() {
+    if (timer !== null) { window.clearInterval(timer); timer = null; }
+    buttons.play.textContent = "Play";
+  }
+  function advance() {
+    if (self.current < getTotal()) { self.current += 1; self.refresh(); }
+    if (self.current >= getTotal()) { stopPlaying(); }
+  }
+  self.reset = function () { stopPlaying(); self.current = 0; self.refresh(); };
+  self.refresh = function () {
+    var total = getTotal();
+    onChange(self.current);
+    buttons.step.disabled = total === 0 || self.current >= total;
+    countElement.textContent = total === 0 ? "" : (self.current === 0 ? total + " steps" : "Step " + self.current + " of " + total);
+  };
+  buttons.step.addEventListener("click", function () { stopPlaying(); advance(); });
+  buttons.reset.addEventListener("click", self.reset);
+  buttons.play.addEventListener("click", function () {
+    if (timer !== null) { stopPlaying(); return; }
+    if (self.current >= getTotal()) { self.current = 0; self.refresh(); }
+    buttons.play.textContent = "Pause";
+    advance();
+    if (self.current < getTotal()) { timer = window.setInterval(advance, PLAY_INTERVAL_MS); }
+  });
+}
+
+function setCaption(element, title, text) {
+  element.innerHTML = "<div class=\"title\">" + title + "</div><p>" + text + "</p>";
+}
+
+/* A lesson runs a tiny program. build() steps through it once and records a snapshot of the machine after each step. */
+
+function Lesson(containerId, spec) {
+  var self = this;
+  var state = spec.initial();
+  var snapshots = [];
+  var initialSnapshot;
+  var ids = { regs: containerId + "-regs", memory: containerId + "-memory", caption: containerId + "-caption" };
+
+  function snapshot(extra) {
+    var result = { regs: copy(state.regs), data: copy(state.data), decoded: copy(state.decoded),
+      read: [], write: [], litRegs: [], phase: null, decoderBytes: "", decoderText: "", title: "", text: "" };
+    var key;
+    for (key in extra) { if (Object.prototype.hasOwnProperty.call(extra, key)) { result[key] = extra[key]; } }
+    return result;
+  }
+  function emit(title, text, extra) {
+    var entry = snapshot(extra || {});
+    entry.title = title;
+    entry.text = text;
+    snapshots.push(entry);
+  }
+
+  function markup() {
+    var phases = spec.showPhases ?
+      "<div class=\"phases\"><span class=\"pill\" data-phase=\"fetch\">Fetch</span><span class=\"arrow\">&rarr;</span>" +
+      "<span class=\"pill\" data-phase=\"decode\">Decode</span><span class=\"arrow\">&rarr;</span>" +
+      "<span class=\"pill\" data-phase=\"execute\">Execute</span></div>" +
+      "<div class=\"decoder\"><div class=\"decoder-label\">instruction the CPU is holding</div><div class=\"decoder-bytes\"></div><div class=\"decoder-text\"></div></div>" : "";
+    byId(containerId).innerHTML =
+      "<div class=\"lesson-grid\"><section class=\"card\"><h3>Inside the CPU</h3>" + phases + "<div class=\"chips\" id=\"" + ids.regs + "\"></div></section>" +
+      "<section class=\"card\"><h3>Memory</h3><div class=\"memory\" id=\"" + ids.memory + "\"></div></section></div>" +
+      "<div class=\"card caption\" id=\"" + ids.caption + "\" aria-live=\"polite\"></div>" +
+      "<div class=\"progress\"><button class=\"primary\" id=\"" + containerId + "-step\">Step</button>" +
+      "<button id=\"" + containerId + "-play\">Play</button><button id=\"" + containerId + "-reset\">Reset</button>" +
+      "<span class=\"count\" id=\"" + containerId + "-count\"></span></div>";
+  }
+
+  function pointerFor(snap, address) {
+    var label = "";
+    spec.pointers.forEach(function (name) { if (snap.regs[name] === address) { label = name + " ▶"; } });
+    return label;
+  }
+
+  function renderMemory(snap) {
+    var html = "";
+    spec.rows.forEach(function (row, index) {
+      var bytes = row.dataKey ? snap.data[row.dataKey] : row.bytes;
+      var cls = "mrow" + (snap.read.indexOf(index) >= 0 ? " read" : "") + (snap.write.indexOf(index) >= 0 ? " write" : "");
+      if (row.heading) { html += "<div class=\"mheading\">" + row.heading + "</div>"; }
+      html += "<div class=\"" + cls + "\"><span class=\"mptr\">" + pointerFor(snap, row.address) + "</span><span class=\"maddr\">" + hex(row.address, 4) +
+        "</span><span class=\"mcontent\"><span class=\"mbytes\">" + bytesText(bytes) + "</span>" +
+        (snap.decoded[index] ? "<span class=\"mtext\">" + row.text + "</span>" : "") +
+        (row.note ? "<span class=\"mnote\">" + row.note + "</span>" : "") + "</span></div>";
+    });
+    byId(ids.memory).innerHTML = html;
+  }
+
+  function renderRegisters(snap) {
+    var html = "";
+    spec.registers.forEach(function (register) {
+      var value = register.flag ? String(snap.regs[register.name]) : hex(snap.regs[register.name], 8);
+      var lit = snap.litRegs.indexOf(register.name) >= 0;
+      html += "<div class=\"chip" + (lit ? " lit" : "") + "\"><div class=\"chip-name\">" + register.name + "</div><div class=\"chip-long\">" +
+        register.long + "</div><div class=\"chip-value\">" + value + "</div></div>";
+    });
+    byId(ids.regs).innerHTML = html;
+  }
+
+  function render(step) {
+    var snap = step === 0 ? initialSnapshot : snapshots[step - 1];
+    var root = byId(containerId);
+    var pills = root.querySelectorAll(".pill");
+    var i;
+    renderRegisters(snap);
+    renderMemory(snap);
+    for (i = 0; i < pills.length; i += 1) {
+      pills[i].classList.toggle("lit", snap.phase === "all" || snap.phase === pills[i].getAttribute("data-phase"));
+    }
+    if (spec.showPhases) {
+      root.querySelector(".decoder-bytes").textContent = snap.decoderBytes;
+      root.querySelector(".decoder-text").textContent = snap.decoderText;
+    }
+    if (step === 0) { setCaption(byId(ids.caption), "Press Step to begin", spec.idleText); }
+    else { setCaption(byId(ids.caption), snap.title, snap.text); }
+  }
+
+  markup();
+  initialSnapshot = snapshot({});
+  spec.build(state, emit);
+  self.stepper = new Stepper(
+    { step: byId(containerId + "-step"), play: byId(containerId + "-play"), reset: byId(containerId + "-reset") },
+    byId(containerId + "-count"), function () { return snapshots.length; }, render);
+  self.stepper.reset();
+}
+
+/* Part 1 */
+
+var FETCH_LESSON = {
+  idleText: "You will see the CPU read, understand and run three instructions, one stage at a time.",
+  showPhases: true,
+  pointers: ["EIP"],
+  registers: [{ name: "EAX", long: "general register" }, { name: "EIP", long: "next instruction" }],
+  rows: [
+    { heading: "program", address: 0x1000, bytes: [0xB8, 0x05, 0x00, 0x00, 0x00], text: "mov eax, 5" },
+    { address: 0x1005, bytes: [0x83, 0xC0, 0x03], text: "add eax, 3" },
+    { address: 0x1008, bytes: [0xA3, 0x00, 0x20, 0x00, 0x00], text: "mov [0x2000], eax" },
+    { address: 0x100D, bytes: [], note: "(end of the program)" },
+    { heading: "data", address: 0x2000, dataKey: "cell", note: "a 4-byte variable" }
+  ],
+  initial: function () { return { regs: { EAX: 0, EIP: 0x1000 }, data: { cell: [0, 0, 0, 0] }, decoded: {} }; },
+  build: function (state, emit) {
+    emit("The CPU runs one loop, forever",
+      "<strong>Fetch</strong> the instruction EIP points to, <strong>decode</strong> what it means, <strong>execute</strong> it, repeat. The program on the right is three instructions stored as plain bytes in memory.",
+      { phase: "all", litRegs: ["EIP"] });
+
+    emit("Fetch: read the bytes at EIP",
+      "EIP holds 0x1000, so the CPU reads the bytes stored at address 0x1000: <code>B8 05 00 00 00</code>. To the memory they are just numbers. (Strictly, the fetch goes through the CS segment register: Part 4.)",
+      { phase: "fetch", read: [0], litRegs: ["EIP"], decoderBytes: "B8 05 00 00 00" });
+    state.decoded[0] = true;
+    emit("Decode: work out what the bytes mean",
+      "The first byte, <code>B8</code>, means \"put the next four bytes into EAX\". Those four bytes, <code>05 00 00 00</code>, are the number 5, written with the low byte first.",
+      { phase: "decode", read: [0], litRegs: [], decoderBytes: "B8 05 00 00 00", decoderText: "mov eax, 5" });
+    state.regs.EAX = 5;
+    state.regs.EIP = 0x1005;
+    emit("Execute: do it",
+      "EAX now holds 5. EIP moved on by the length of the instruction (5 bytes), so it points at the next one.",
+      { phase: "execute", read: [0], litRegs: ["EAX", "EIP"], decoderBytes: "B8 05 00 00 00", decoderText: "mov eax, 5" });
+
+    emit("Fetch the next instruction",
+      "EIP is now 0x1005. This instruction is only 3 bytes: <code>83 C0 03</code>. Instructions have different lengths.",
+      { phase: "fetch", read: [1], litRegs: ["EIP"], decoderBytes: "83 C0 03" });
+    state.decoded[1] = true;
+    emit("Decode",
+      "<code>83 C0</code> means \"add a small number to EAX\". The last byte, <code>03</code>, is that number.",
+      { phase: "decode", read: [1], litRegs: [], decoderBytes: "83 C0 03", decoderText: "add eax, 3" });
+    state.regs.EAX = 8;
+    state.regs.EIP = 0x1008;
+    emit("Execute",
+      "The addition happens inside the CPU: 5 + 3 = 8, and EAX holds 8. EIP moves on 3 bytes. Memory was not touched by this instruction.",
+      { phase: "execute", read: [1], litRegs: ["EAX", "EIP"], decoderBytes: "83 C0 03", decoderText: "add eax, 3" });
+
+    emit("Fetch",
+      "EIP is 0x1008. The CPU reads 5 bytes: <code>A3 00 20 00 00</code>.",
+      { phase: "fetch", read: [2], litRegs: ["EIP"], decoderBytes: "A3 00 20 00 00" });
+    state.decoded[2] = true;
+    emit("Decode",
+      "<code>A3</code> means \"store EAX into memory at the address given by the next four bytes\". Those bytes, <code>00 20 00 00</code>, are the number 0x2000, low byte first.",
+      { phase: "decode", read: [2], litRegs: [], decoderBytes: "A3 00 20 00 00", decoderText: "mov [0x2000], eax" });
+    state.data.cell = [8, 0, 0, 0];
+    state.regs.EIP = 0x100D;
+    emit("Execute: write to memory",
+      "EAX is copied into memory at 0x2000: <code>08 00 00 00</code>. This is the first time memory was written; the other instructions only used registers. EIP points past the end of the program.",
+      { phase: "execute", read: [2], write: [4], litRegs: ["EIP"], decoderBytes: "A3 00 20 00 00", decoderText: "mov [0x2000], eax" });
+
+    emit("Summary: a program is just bytes",
+      "Nothing in memory marks the bytes at 0x1000 as code and the bytes at 0x2000 as data. The CPU treats whatever EIP points at as an instruction. Everything the machine ever does is this loop. Registers are quick and memory is slow, which is why work is done in registers first and stored afterwards.",
+      { phase: "all", litRegs: [] });
+  }
+};
+
+/* Part 2 */
+
+var FLAGS_LESSON = {
+  idleText: "You will see the CPU count down from 3 and use a flag to decide when to stop repeating.",
+  showPhases: false,
+  pointers: ["EIP"],
+  registers: [{ name: "ECX", long: "counter" }, { name: "EIP", long: "next instruction" }, { name: "ZF", long: "zero flag", flag: true }],
+  rows: [
+    { heading: "program", address: 0x1000, bytes: [0xB9, 0x03, 0x00, 0x00, 0x00], text: "mov ecx, 3" },
+    { address: 0x1005, bytes: [0x49], text: "dec ecx" },
+    { address: 0x1006, bytes: [0x75, 0xFD], text: "jnz 0x1005" },
+    { address: 0x1008, bytes: [], note: "(end of the program)" }
+  ],
+  initial: function () { return { regs: { ECX: 0, EIP: 0x1000, ZF: 0 }, data: {}, decoded: {} }; },
+  build: function (state, emit) {
+    var count;
+    emit("Flags and jumps",
+      "The CPU keeps a set of single-bit flags. The one used here is ZF, the zero flag: it becomes 1 when the last arithmetic result was 0. A conditional jump such as <code>jnz</code> (\"jump if not zero\") looks at a flag. Each step below is one whole instruction.",
+      { litRegs: ["ZF"] });
+
+    state.decoded[0] = true;
+    state.regs.ECX = 3;
+    state.regs.EIP = 0x1005;
+    emit("mov ecx, 3",
+      "ECX = 3. Moving a value into a register does not change the flags. EIP moves to the next instruction.",
+      { read: [0], litRegs: ["ECX", "EIP"] });
+
+    for (count = 2; count >= 0; count -= 1) {
+      state.decoded[1] = true;
+      state.regs.ECX = count;
+      state.regs.ZF = count === 0 ? 1 : 0;
+      state.regs.EIP = 0x1006;
+      emit("dec ecx",
+        "Subtract 1 from ECX: it is now " + count + ". The result " + (count === 0 ? "<strong>is</strong> zero, so the CPU sets ZF to 1." : "is not zero, so ZF is 0."),
+        { read: [1], litRegs: ["ECX", "ZF", "EIP"] });
+
+      state.decoded[2] = true;
+      if (count !== 0) {
+        state.regs.EIP = 0x1005;
+        emit("jnz 0x1005: jump back",
+          "<code>jnz</code> means \"jump if ZF is 0\". ZF is 0, so instead of moving forward the CPU puts 0x1005 into EIP. The next fetch reads <code>dec ecx</code> again: this is a loop.",
+          { read: [2], litRegs: ["EIP"] });
+      } else {
+        state.regs.EIP = 0x1008;
+        emit("jnz 0x1005: do not jump",
+          "ZF is 1, so <code>jnz</code> does nothing and EIP moves on to 0x1008, the end of the program. The loop ran three times.",
+          { read: [2], litRegs: ["EIP", "ZF"] });
+      }
+    }
+
+    emit("Summary: loops and ifs are jumps",
+      "EIP normally moves forward by itself. A jump overwrites it, and a conditional jump does so only when a flag says to. Every <code>while</code>, <code>for</code> and <code>if</code> in a program is built from this.",
+      { litRegs: [] });
+  }
+};
+
+/* Part 3 */
+
+var STACK_LESSON = {
+  idleText: "You will see a value put on the stack, lost from its register, and taken back.",
+  showPhases: false,
+  pointers: ["EIP", "ESP"],
+  registers: [{ name: "EAX", long: "general register" }, { name: "ESP", long: "top of the stack" }, { name: "EIP", long: "next instruction" }],
+  rows: [
+    { heading: "program", address: 0x1000, bytes: [0xB8, 0x07, 0x00, 0x00, 0x00], text: "mov eax, 7" },
+    { address: 0x1005, bytes: [0x50], text: "push eax" },
+    { address: 0x1006, bytes: [0x31, 0xC0], text: "xor eax, eax" },
+    { address: 0x1008, bytes: [0x58], text: "pop eax" },
+    { address: 0x1009, bytes: [], note: "(end of the program)" },
+    { heading: "stack (grows toward lower addresses)", address: 0x9000, bytes: [], note: "above the stack: nothing pushed yet" },
+    { address: 0x8FFC, dataKey: "slot", note: "first slot of the stack" }
+  ],
+  initial: function () { return { regs: { EAX: 0, ESP: 0x9000, EIP: 0x1000 }, data: { slot: [0, 0, 0, 0] }, decoded: {} }; },
+  build: function (state, emit) {
+    emit("The stack",
+      "A pile of plates: <code>push</code> puts a value on top, <code>pop</code> takes it back. ESP points at the top. Each value takes 4 bytes and the pile grows toward lower addresses, so a push moves ESP down.",
+      { litRegs: ["ESP"] });
+
+    state.decoded[0] = true;
+    state.regs.EAX = 7;
+    state.regs.EIP = 0x1005;
+    emit("mov eax, 7", "EAX = 7.", { read: [0], litRegs: ["EAX", "EIP"] });
+
+    state.decoded[1] = true;
+    state.regs.ESP = 0x8FFC;
+    state.data.slot = [7, 0, 0, 0];
+    state.regs.EIP = 0x1006;
+    emit("push eax",
+      "The CPU first lowers ESP by 4, to 0x8FFC, then writes EAX where ESP now points. EAX still holds 7: the stack has a copy.",
+      { read: [1], write: [6], litRegs: ["ESP", "EIP"] });
+
+    state.decoded[2] = true;
+    state.regs.EAX = 0;
+    state.regs.EIP = 0x1008;
+    emit("xor eax, eax",
+      "Combining a register with itself using xor gives 0, so this clears EAX. The 7 is gone from the register, but it is safe on the stack.",
+      { read: [2], litRegs: ["EAX", "EIP"] });
+
+    state.decoded[3] = true;
+    state.regs.EAX = 7;
+    state.regs.ESP = 0x9000;
+    state.regs.EIP = 0x1009;
+    emit("pop eax",
+      "The CPU reads the 4 bytes at ESP into EAX, then raises ESP by 4. The 7 is back. The old bytes stay in memory, but they are now below ESP, so they count as free space for the next push.",
+      { read: [3, 6], litRegs: ["EAX", "ESP", "EIP"] });
+
+    emit("Summary: why the stack matters",
+      "A function call, a return and an interrupt all use the same mechanism: the CPU pushes the address to come back to (the old EIP), and later pops it. When we build the fault handler, the CPU will push EIP on the stack for us, and that is the value the handler prints. Strictly the stack is reached through the SS segment register: Part 4.",
+      { litRegs: ["ESP"] });
+  }
+};
+
+new Lesson("lesson-fetch", FETCH_LESSON);
+new Lesson("lesson-flags", FLAGS_LESSON);
+new Lesson("lesson-stack", STACK_LESSON);
+
+/* Part 4 */
+
+var MODE_STEPS = [
+  { title: "An address always comes with a segment register",
+    text: "In Part 1 the CPU \"read address 0x1000\". That number was only half of it: EIP is an <em>offset</em>, and the 386 pairs every offset with a <strong>segment register</strong>. For instruction fetches that register is CS.",
+    lit: ["fetch"], modes: false },
+  { title: "The CPU picks the register from the job",
+    text: "Fetching instructions uses <strong>CS</strong> (Code Segment). Reading and writing data uses <strong>DS</strong> (Data Segment), so the store in Part 1 really went to DS plus 0x2000. The stack uses <strong>SS</strong> (Stack Segment). The program never names them.",
+    lit: ["fetch", "data", "stack"], modes: false },
+  { title: "What a segment register holds depends on the mode",
+    text: "Bit 0 of a control register, CR0, selects the mode. The CPU powers on in real mode, where a segment register is part of an address. Our loader's second stage sets the bit to 1, giving protected mode, where the register is a ticket into the GDT, a table the OS fills in. That is the table the kernel's <code>gdt_load</code> installs.",
+    lit: [], modes: true },
+  { title: "Where to go next",
+    text: "<a href=\"x86-addressing-animation.html\">x86-addressing-animation.html</a> shows one program in RAM, with CS, DS and SS pointing at its code, data and stack, first in real mode and then in protected mode. After that, <a href=\"gdt-animation.html\">gdt-animation.html</a> goes through each check the CPU makes on a ticket.",
+    lit: [], modes: true }
+];
+
+function renderModes(step) {
+  var current = step === 0 ? null : MODE_STEPS[step - 1];
+  var lit = current === null ? [] : current.lit;
+  ["fetch", "data", "stack"].forEach(function (key) {
+    byId("pair-" + key).classList.toggle("lit", lit.indexOf(key) >= 0);
+  });
+  byId("mode-real").classList.toggle("show", current !== null && current.modes);
+  byId("mode-protected").classList.toggle("show", current !== null && current.modes);
+  if (current === null) {
+    setCaption(byId("caption-modes"), "Press Step to begin", "You will see that every address on a 386 comes with a segment register, and what the mode changes about it.");
+  } else {
+    setCaption(byId("caption-modes"), current.title, current.text);
+  }
+}
+
+new Stepper(
+  { step: byId("modes-step"), play: byId("modes-play"), reset: byId("modes-reset") },
+  byId("modes-count"), function () { return MODE_STEPS.length; }, renderModes).reset();
+</script>
+</body>
+</html>

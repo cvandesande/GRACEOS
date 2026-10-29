@@ -33,6 +33,14 @@ The toolchain is a Nix flake dev shell: an `i686-elf` GCC and binutils built wit
 nix develop
 ```
 
+## Learning the x86 basics
+
+Three interactive pages in `docs/`, to read in this order. Open each file in a browser:
+
+1. [How a 386 CPU works](docs/x86-cpu-basics-animation.html): registers, fetch-decode-execute, flags and jumps, the stack.
+2. [Why segment registers exist](docs/x86-addressing-animation.html): code, data and stack regions in RAM, in real mode and in protected mode.
+3. [What the GDT does](docs/gdt-animation.html): each check the CPU makes on a selector.
+
 ## Build plan
 
 1. Toolchain and boot, with boot messages over serial.

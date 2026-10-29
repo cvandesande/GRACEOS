@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GRACEOS: what the GDT does</title>
+<style>
+:root {
+  --bg: #f7f7f4;
+  --card: #ffffff;
+  --text: #1c1c1a;
+  --muted: #66665f;
+  --line: #d6d6cf;
+  --accent: #2557c8;
+  --accent-soft: #dce6fb;
+  --pass: #1b7a3a;
+  --pass-soft: #dff2e5;
+  --fail: #b3261e;
+  --fail-soft: #fadedb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141416;
+    --card: #1e1e22;
+    --text: #e8e8e4;
+    --muted: #9a9a92;
+    --line: #34343a;
+    --accent: #7ba0f5;
+    --accent-soft: #24324f;
+    --pass: #66c486;
+    --pass-soft: #1c3526;
+    --fail: #f0827a;
+    --fail-soft: #43201d;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px 48px;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+main { max-width: 1040px; margin: 0 auto; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 0.8rem; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+p { margin: 0 0 12px; }
+code, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+.lead { color: var(--muted); max-width: 70ch; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  align-items: flex-end;
+  margin: 18px 0 14px;
+}
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 0.8rem; color: var(--muted); }
+input[type="text"], select {
+  font: inherit;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  width: 9.5em;
+}
+select { width: auto; }
+input[aria-invalid="true"] { border-color: var(--fail); }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; }
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { button.primary { color: #101018; } }
+button.small { padding: 2px 8px; font-size: 0.85rem; }
+.checkbox { display: flex; gap: 6px; align-items: center; padding-bottom: 6px; }
+.error { color: var(--fail); min-height: 1.5em; margin: 0 0 8px; font-size: 0.9rem; }
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr) minmax(0, 1.1fr);
+  gap: 14px;
+}
+@media (max-width: 860px) { .stage { grid-template-columns: 1fr; } }
+
+.register-name { font-size: 1.3rem; font-weight: 600; }
+.bits { display: flex; gap: 8px; margin: 10px 0 6px; flex-wrap: wrap; }
+.field-box {
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  text-align: center;
+  transition: border-color 0.3s, background 0.3s;
+}
+.field-box .bitstring { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.05rem; }
+.field-box .fieldname { font-size: 0.72rem; color: var(--muted); }
+.field-box.lit { border-color: var(--accent); background: var(--accent-soft); }
+.decoded { color: var(--muted); font-size: 0.9rem; }
+
+.gdt-wrap { position: relative; padding-left: 1.7rem; }
+.pointer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--accent);
+  font-size: 1.2rem;
+  line-height: 1;
+  transform: translateY(-50%);
+  transition: top 0.5s ease, opacity 0.3s;
+  opacity: 0;
+}
+.pointer.visible { opacity: 1; }
+.pointer.bad { color: var(--fail); }
+table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 6px 6px; font-size: 0.75rem; }
+td { padding: 6px; border-top: 1px solid var(--line); transition: background 0.3s; }
+td.mono { font-size: 0.8rem; }
+tr.active td { background: var(--accent-soft); }
+tr.active.bad td { background: var(--fail-soft); }
+tr.ghost td { color: var(--muted); border-top: 1px dashed var(--line); font-style: italic; }
+tr.ghost.active td { background: var(--fail-soft); color: var(--fail); }
+.gdtr { margin-top: 10px; color: var(--muted); font-size: 0.85rem; }
+
+ol.checks { list-style: none; margin: 0; padding: 0; }
+ol.checks li {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr;
+  gap: 4px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  animation: appear 0.4s ease;
+}
+ol.checks li:first-child { border-top: 0; }
+ol.checks .icon { font-weight: 700; }
+ol.checks li.pass .icon { color: var(--pass); }
+ol.checks li.fail .icon { color: var(--fail); }
+ol.checks .phase { font-size: 0.72rem; color: var(--muted); }
+.placeholder { color: var(--muted); font-size: 0.9rem; }
+@keyframes appear { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.caption { margin-top: 14px; min-height: 8.5em; }
+.caption .phase-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.caption .title { font-weight: 600; font-size: 1.05rem; }
+.caption.fail { border-color: var(--fail); }
+.caption.pass.final { border-color: var(--pass); }
+.progress { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.progress .count { color: var(--muted); font-size: 0.9rem; }
+.notes { margin-top: 22px; color: var(--muted); font-size: 0.88rem; }
+.notes li { margin-bottom: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pointer, td, .field-box { transition: none; }
+  ol.checks li { animation: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>What the GDT does</h1>
+  <p class="lead">Every memory access in protected mode goes through a segment register. The register holds a <strong>selector</strong>, which is an index into the GDT, not an address. Pick a selector and an offset, then step through what the CPU does with them.</p>
+
+  <div class="card controls">
+    <div class="field">
+      <label for="access">Access</label>
+      <select id="access">
+        <option value="read">read (through DS)</option>
+        <option value="write">write (through DS)</option>
+        <option value="execute">execute (through CS)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="selector">Selector (hex, 16 bits)</label>
+      <input id="selector" type="text" value="0x0010" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="offset">Offset (hex, 32 bits)</label>
+      <input id="offset" type="text" value="0x00001000" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Try a selector</label>
+      <div class="quick" id="quick"></div>
+    </div>
+    <label class="checkbox"><input id="demo" type="checkbox"> add a fourth entry (illustration, not in the kernel)</label>
+  </div>
+  <p class="error" id="error" role="alert"></p>
+
+  <div class="stage">
+    <section class="card" aria-labelledby="h-reg">
+      <h2 id="h-reg">Segment register</h2>
+      <div class="register-name" id="reg-name">DS</div>
+      <div class="bits" id="bits"></div>
+      <div class="decoded" id="decoded"></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-gdt">
+      <h2 id="h-gdt">GDT in memory</h2>
+      <div class="gdt-wrap" id="gdt-wrap">
+        <span class="pointer" id="pointer" aria-hidden="true">&#9654;</span>
+        <table>
+          <thead><tr><th>Index</th><th>Selector</th><th>Base</th><th>Limit</th><th>What it is</th></tr></thead>
+          <tbody id="gdt-body"></tbody>
+        </table>
+      </div>
+      <div class="gdtr" id="gdtr"></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-checks">
+      <h2 id="h-checks">Checks</h2>
+      <ol class="checks" id="checks"></ol>
+      <p class="placeholder" id="checks-placeholder">The CPU's checks appear here as you step.</p>
+    </section>
+  </div>
+
+  <div class="card caption" id="caption" aria-live="polite">
+    <div class="title">Press Step to begin</div>
+    <p>Each step shows one thing the CPU does. Checks marked "when the register is loaded" happen once, at <code>mov ds, ax</code> or a far jump. Checks marked "on every access" happen each time memory is touched.</p>
+  </div>
+
+  <div class="progress">
+    <button class="primary" id="step">Step</button>
+    <button id="play">Play</button>
+    <button id="reset">Reset</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <ul class="notes">
+    <li>The first three entries are the table built in <code>src/gdt.c</code>: a null entry, a ring 0 code segment and a ring 0 data segment, both with base 0 and a 4 GiB limit. That is the flat model: <code>base + offset</code> is just the offset, so segmentation changes nothing and paging does the protecting.</li>
+    <li>The fourth entry only exists when you tick the box. It shows what a segment with a non-zero base and a small limit would do, which is what Candidate B and L4's small address spaces would need.</li>
+    <li>Simplified: the CPU is at ring 0, there is no LDT, and a failed check is shown as a general protection fault (<code>#GP</code>). Our kernel has no IDT yet, so on the real machine that fault is currently a silent triple fault.</li>
+    <li>After this, with paging on, the linear address is translated once more into a physical address.</li>
+  </ul>
+</main>
+
+<script>
+"use strict";
+
+var GDT_ENTRIES = [
+  { name: "null", type: "null", base: 0, limit: 0, limitNote: "" },
+  { name: "ring 0 code, readable", type: "code", readable: true, base: 0, limit: 0xFFFFFFFF, limitNote: "4 GiB" },
+  { name: "ring 0 data, writable", type: "data", writable: true, base: 0, limit: 0xFFFFFFFF, limitNote: "4 GiB" }
+];
+var DEMO_ENTRY = { name: "demo: small data segment", type: "data", writable: true, base: 0x00100000, limit: 0xFFFF, limitNote: "64 KiB" };
+var QUICK_SELECTORS = [0x0008, 0x0010, 0x0000, 0x0018, 0x0004, 0x000B];
+var PLAY_INTERVAL_MS = 1700;
+
+var el = {
+  access: document.getElementById("access"),
+  selector: document.getElementById("selector"),
+  offset: document.getElementById("offset"),
+  demo: document.getElementById("demo"),
+  quick: document.getElementById("quick"),
+  error: document.getElementById("error"),
+  regName: document.getElementById("reg-name"),
+  bits: document.getElementById("bits"),
+  decoded: document.getElementById("decoded"),
+  gdtWrap: document.getElementById("gdt-wrap"),
+  gdtBody: document.getElementById("gdt-body"),
+  gdtr: document.getElementById("gdtr"),
+  pointer: document.getElementById("pointer"),
+  checks: document.getElementById("checks"),
+  placeholder: document.getElementById("checks-placeholder"),
+  caption: document.getElementById("caption"),
+  step: document.getElementById("step"),
+  play: document.getElementById("play"),
+  reset: document.getElementById("reset"),
+  count: document.getElementById("count")
+};
+
+var steps = [];
+var current = -1;
+var timer = null;
+var entries = [];
+
+function hex(value, digits) {
+  var text = (value >>> 0).toString(16).toUpperCase();
+  while (text.length < digits) { text = "0" + text; }
+  return "0x" + text;
+}
+
+function parseHex(text, maxDigits) {
+  var pattern = new RegExp("^(0x)?[0-9a-f]{1,%d}$".replace("%d", maxDigits), "i");
+  var trimmed = text.trim();
+  if (!pattern.test(trimmed)) { return null; }
+  return parseInt(trimmed.replace(/^0x/i, ""), 16) >>> 0;
+}
+
+function describeLimit(entry) {
+  return hex(entry.limit, 8) + (entry.limitNote ? " (" + entry.limitNote + ")" : "");
+}
+
+function buildSteps(selector, offset, access) {
+  var register = access === "execute" ? "CS" : "DS";
+  var index = selector >> 3;
+  var tableBit = (selector >> 2) & 1;
+  var requested = selector & 3;
+  var gdtLimit = entries.length * 8 - 1;
+  var isNull = index === 0 && tableBit === 0;
+  var list = [];
+  var entry = null;
+
+  function info(title, text, extra) {
+    var step = { kind: "info", title: title, text: text, status: "info", row: null, field: null };
+    var key;
+    for (key in extra) { if (Object.prototype.hasOwnProperty.call(extra, key)) { step[key] = extra[key]; } }
+    list.push(step);
+  }
+  function check(label, passed, phase, passText, failText, extra) {
+    var step = {
+      kind: "check", title: label, text: passed ? passText : failText,
+      status: passed ? "pass" : "fail", phase: phase, row: null, field: null
+    };
+    var key;
+    for (key in extra) { if (Object.prototype.hasOwnProperty.call(extra, key)) { step[key] = extra[key]; } }
+    list.push(step);
+    return passed;
+  }
+  function fault(text) {
+    list.push({ kind: "result", title: "General protection fault (#GP)", text: text, status: "fail", row: null, field: null });
+    return list;
+  }
+
+  info("The selector is loaded into " + register,
+    register + " holds " + hex(selector, 4) + ". That is not an address. The CPU reads it as three fields: index " + index +
+    ", table bit " + tableBit + " (" + (tableBit ? "LDT" : "GDT") + ") and requested privilege level " + requested + ".",
+    { field: "all" });
+
+  if (tableBit === 1) {
+    info("Which table?", "Table bit 1 means the LDT, a per-task table. This kernel has not loaded one.", { field: "ti" });
+    check("Selector uses the GDT", false, "when the register is loaded", "", "The selector points into the LDT and there is none.", { field: "ti" });
+    return fault(register + " cannot be loaded with an LDT selector when no LDT exists.");
+  }
+
+  if (isNull && register === "DS") {
+    info("Index 0 is the null entry",
+      "Entry 0 is reserved and never usable. Loading it into DS is allowed, so a register left at zero by mistake is not caught at the load.",
+      { field: "index", row: 0 });
+    check("Selector is not the null selector", false, "on every access",
+      "", "DS holds the null selector, so any memory access through it faults.", { field: "index", row: 0 });
+    return fault("The load was allowed, but the access is not: DS is the null selector.");
+  }
+
+  info("Index " + index + " selects a descriptor",
+    "Each descriptor is 8 bytes, so the CPU looks " + index + " &times; 8 = " + (index * 8) + " bytes into the GDT.",
+    { field: "index", row: index <= entries.length - 1 ? index : "beyond" });
+
+  if (!check("Selector is not the null selector", !isNull, "when the register is loaded",
+    "Index " + index + " is not the null entry.", "Entry 0 can never be loaded into " + register + ".", { field: "index", row: 0 })) {
+    return fault("The null selector cannot be loaded into " + register + ".");
+  }
+  if (!check("Index is inside the GDT", index * 8 + 7 <= gdtLimit, "when the register is loaded",
+    "Bytes " + (index * 8) + " to " + (index * 8 + 7) + " are inside the table (limit " + hex(gdtLimit, 2) + ").",
+    "The descriptor would start at byte " + (index * 8) + ", but the table ends at byte " + gdtLimit + ".",
+    { field: "index", row: index <= entries.length - 1 ? index : "beyond" })) {
+    return fault("Selector " + hex(selector, 4) + " points past the end of the GDT.");
+  }
+
+  entry = entries[index];
+  check("Segment is present", true, "when the register is loaded",
+    "The present bit is set in this descriptor.", "", { row: index });
+  if (!check("Privilege is allowed", requested === 0, "when the register is loaded",
+    "Requested level 0 is not weaker than the descriptor's level 0.",
+    "The selector asks for level " + requested + " but the descriptor is level 0, so the CPU refuses.",
+    { field: "rpl", row: index })) {
+    return fault("The privilege check failed while loading " + register + ".");
+  }
+
+  var typeFits = register === "CS" ? entry.type === "code" : (entry.type === "data" || (entry.type === "code" && entry.readable));
+  if (!check("Segment type fits " + register, typeFits, "when the register is loaded",
+    entry.type === "code" ? "A code segment may be loaded into " + register + "." : "A data segment may be loaded into " + register + ".",
+    register === "CS" ? "CS can only hold a code segment, and this descriptor is data." : "DS cannot hold this descriptor.",
+    { row: index })) {
+    return fault(register + " cannot be loaded with this descriptor.");
+  }
+
+  info("The descriptor is copied into " + register,
+    "The CPU keeps a hidden copy of the descriptor inside " + register + ": base " + hex(entry.base, 8) + ", limit " + describeLimit(entry) +
+    ". Later accesses use the copy and do not read the GDT again. That is why <code>lgdt</code> alone changes nothing until the registers are reloaded.",
+    { row: index });
+
+  var allowed = true;
+  var denial = "";
+  if (access === "write" && !(entry.type === "data" && entry.writable)) {
+    allowed = false;
+    denial = entry.type === "code" ? "Code segments are never writable." : "This data segment is read-only.";
+  }
+  if (!check("Segment allows a " + access, allowed, "on every access",
+    "This descriptor allows a " + access + ".", denial, { row: index })) {
+    return fault("A " + access + " through this descriptor is not permitted.");
+  }
+  if (!check("Offset is within the limit", offset <= entry.limit, "on every access",
+    hex(offset, 8) + " is not above the limit " + hex(entry.limit, 8) + ".",
+    hex(offset, 8) + " is above the limit " + hex(entry.limit, 8) + ".", { row: index })) {
+    return fault("The offset is outside the segment.");
+  }
+
+  var linear = (entry.base + offset) >>> 0;
+  list.push({
+    kind: "result", title: "Linear address = base + offset",
+    text: hex(entry.base, 8) + " + " + hex(offset, 8) + " = <strong class=\"mono\">" + hex(linear, 8) + "</strong>." +
+      (entry.base === 0 ? " The base is 0, so the offset passes through unchanged: this is why a flat table makes segmentation do nothing." : " The base moved the access inside the address space."),
+    status: "pass", row: index, field: null
+  });
+  return list;
+}
+
+function renderGdt() {
+  var rows = entries.concat([]);
+  var i;
+  var html = "";
+  for (i = 0; i < rows.length; i += 1) {
+    html += "<tr data-row=\"" + i + "\"><td class=\"mono\">" + i + "</td><td class=\"mono\">" + hex(i * 8, 4) +
+      "</td><td class=\"mono\">" + (rows[i].type === "null" ? "-" : hex(rows[i].base, 8)) +
+      "</td><td class=\"mono\">" + (rows[i].type === "null" ? "-" : describeLimit(rows[i])) +
+      "</td><td>" + rows[i].name + "</td></tr>";
+  }
+  html += "<tr class=\"ghost\" data-row=\"beyond\"><td colspan=\"5\">past the end of the table</td></tr>";
+  el.gdtBody.innerHTML = html;
+  el.gdtr.textContent = "GDTR limit = " + hex(entries.length * 8 - 1, 2) + " (" + entries.length * 8 + " bytes, " + entries.length + " entries)";
+}
+
+function renderBits(selector, register) {
+  var index = (selector >> 3) & 0x1FFF;
+  var bitString = selector.toString(2);
+  while (bitString.length < 16) { bitString = "0" + bitString; }
+  el.regName.textContent = register;
+  el.bits.innerHTML =
+    "<div class=\"field-box\" data-field=\"index\"><div class=\"bitstring\">" + bitString.slice(0, 13) + "</div><div class=\"fieldname\">index = " + index + "</div></div>" +
+    "<div class=\"field-box\" data-field=\"ti\"><div class=\"bitstring\">" + bitString.slice(13, 14) + "</div><div class=\"fieldname\">table</div></div>" +
+    "<div class=\"field-box\" data-field=\"rpl\"><div class=\"bitstring\">" + bitString.slice(14) + "</div><div class=\"fieldname\">privilege</div></div>";
+  el.decoded.textContent = hex(selector, 4) + " = index " + index + ", " + ((selector >> 2) & 1 ? "LDT" : "GDT") + ", level " + (selector & 3);
+}
+
+function placePointer(rowKey, bad) {
+  var row = rowKey === null ? null : el.gdtBody.querySelector("[data-row=\"" + rowKey + "\"]");
+  var wrapTop;
+  var rowBox;
+  if (row === null) {
+    el.pointer.classList.remove("visible");
+    return;
+  }
+  wrapTop = el.gdtWrap.getBoundingClientRect().top;
+  rowBox = row.getBoundingClientRect();
+  el.pointer.style.top = (rowBox.top - wrapTop + rowBox.height / 2) + "px";
+  el.pointer.classList.add("visible");
+  if (bad) { el.pointer.classList.add("bad"); } else { el.pointer.classList.remove("bad"); }
+}
+
+function render() {
+  var step = current >= 0 ? steps[current] : null;
+  var rows = el.gdtBody.querySelectorAll("tr");
+  var boxes = el.bits.querySelectorAll(".field-box");
+  var i;
+  var html = "";
+  var isFinal = step !== null && step.kind === "result";
+
+  for (i = 0; i < rows.length; i += 1) {
+    var key = rows[i].getAttribute("data-row");
+    var active = step !== null && step.row !== null && String(step.row) === key;
+    rows[i].classList.toggle("active", active);
+    rows[i].classList.toggle("bad", active && step.status === "fail");
+  }
+  for (i = 0; i < boxes.length; i += 1) {
+    var field = boxes[i].getAttribute("data-field");
+    boxes[i].classList.toggle("lit", step !== null && (step.field === "all" || step.field === field));
+  }
+  placePointer(step === null ? null : step.row, step !== null && step.status === "fail");
+
+  for (i = 0; i <= current; i += 1) {
+    if (steps[i].kind === "check") {
+      html += "<li class=\"" + steps[i].status + "\"><span class=\"icon\">" + (steps[i].status === "pass" ? "&#10003;" : "&#10007;") +
+        "</span><span>" + steps[i].title + "<br><span class=\"phase\">" + steps[i].phase + "</span></span></li>";
+    }
+  }
+  el.checks.innerHTML = html;
+  el.placeholder.style.display = html === "" ? "" : "none";
+
+  el.caption.classList.remove("fail", "pass", "final");
+  if (step === null) {
+    el.caption.innerHTML = "<div class=\"title\">Press Step to begin</div><p>Each step shows one thing the CPU does. Checks marked \"when the register is loaded\" happen once, at <code>mov ds, ax</code> or a far jump. Checks marked \"on every access\" happen each time memory is touched.</p>";
+    el.count.textContent = steps.length > 0 ? steps.length + " steps" : "";
+  } else {
+    el.caption.innerHTML = "<div><span class=\"title\">" + step.title + "</span>" +
+      (step.phase ? "<span class=\"phase-badge\">" + step.phase + "</span>" : "") + "</div><p>" + step.text + "</p>";
+    if (step.status === "fail") { el.caption.classList.add("fail"); }
+    if (step.status === "pass" && isFinal) { el.caption.classList.add("pass", "final"); }
+    el.count.textContent = "Step " + (current + 1) + " of " + steps.length;
+  }
+  el.step.disabled = steps.length === 0 || current >= steps.length - 1;
+}
+
+function stopPlaying() {
+  if (timer !== null) { window.clearInterval(timer); timer = null; }
+  el.play.textContent = "Play";
+}
+
+function advance() {
+  if (current < steps.length - 1) { current += 1; render(); }
+  if (current >= steps.length - 1) { stopPlaying(); }
+}
+
+function rebuild() {
+  var selector = parseHex(el.selector.value, 4);
+  var offset = parseHex(el.offset.value, 8);
+  var message = "";
+  stopPlaying();
+  current = -1;
+  entries = GDT_ENTRIES.concat(el.demo.checked ? [DEMO_ENTRY] : []);
+  el.selector.setAttribute("aria-invalid", selector === null ? "true" : "false");
+  el.offset.setAttribute("aria-invalid", offset === null ? "true" : "false");
+  if (selector === null) { message = "The selector must be 1 to 4 hex digits."; }
+  else if (offset === null) { message = "The offset must be 1 to 8 hex digits."; }
+  el.error.textContent = message;
+  renderGdt();
+  if (message !== "") {
+    steps = [];
+    el.play.disabled = true;
+  } else {
+    steps = buildSteps(selector, offset, el.access.value);
+    renderBits(selector, el.access.value === "execute" ? "CS" : "DS");
+    el.play.disabled = false;
+  }
+  render();
+}
+
+QUICK_SELECTORS.forEach(function (value) {
+  var button = document.createElement("button");
+  button.type = "button";
+  button.className = "small mono";
+  button.textContent = hex(value, 4);
+  button.addEventListener("click", function () { el.selector.value = hex(value, 4); rebuild(); });
+  el.quick.appendChild(button);
+});
+
+el.step.addEventListener("click", function () { stopPlaying(); advance(); });
+el.play.addEventListener("click", function () {
+  if (timer !== null) { stopPlaying(); return; }
+  if (current >= steps.length - 1) { current = -1; render(); }
+  el.play.textContent = "Pause";
+  advance();
+  if (current < steps.length - 1) { timer = window.setInterval(advance, PLAY_INTERVAL_MS); }
+});
+el.reset.addEventListener("click", rebuild);
+["change", "input"].forEach(function (name) {
+  el.selector.addEventListener(name, rebuild);
+  el.offset.addEventListener(name, rebuild);
+});
+el.access.addEventListener("change", rebuild);
+el.demo.addEventListener("change", rebuild);
+window.addEventListener("resize", render);
+
+rebuild();
+</script>
+</body>
+</html>
