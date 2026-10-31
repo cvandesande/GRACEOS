@@ -97,26 +97,26 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 
 ### Cost model (Proposed)
 
-What the CPU says each primitive costs, so decisions rest on numbers and not on feel. The clock counts are from the Intel 80386 Programmer's Reference Manual; they assume no wait states and a cache hit, so they are best cases. "Measured" is filled in during phase 2 on the 386DX and the 486. Where the manual has no number, the cell says what to measure.
+What the CPU says each primitive costs, so decisions rest on numbers and not on feel. The 386 clock counts are from the Intel 80386 Programmer's Reference Manual. The 486 counts come from a [third-party timing table](https://www2.math.uni-wuppertal.de/~fpf/Uebungen/GdR-SS02/opcode_i.html) because the Intel i486 Programmer's Reference Manual could not be fetched; the table agrees with the 386 manual on every 386 value we checked, but the 486 cells should be checked against the Intel manual before anything is decided on them. Counts assume no wait states and a cache hit, so they are best cases. "Measured" is filled in during phase 2 on the 386DX and the 486. Where no number is known, the cell says "Look up" (find it in the Intel manual) or "Measure".
 
-| Primitive | 386 clocks (manual) | Measured | Notes |
-| --- | --- | --- | --- |
-| [`INT n`](https://courses.cs.washington.edu/courses/cse451/24sp/resources/i386/INT.htm), same privilege | 59 | | Real mode: 37 |
-| `INT n` to an inner ring (ring 3 to 0) | 99 | | The system call path if it uses `INT` |
-| `INT n` from V86 mode to ring 0 | 119 | | Start of every V86 trap |
-| [`IRET`](https://courses.cs.washington.edu/courses/cse451/24sp/resources/i386/IRET.htm), same privilege | 38 | | To an outer ring: 82. `IRETD` back to V86: 60 |
-| V86 trap round trip | 179 plus the emulation code | | 119 + 60 from the rows above; the handler adds decode and emulation, so measure it per instruction type (`CLI`, `STI`, `PUSHF`, `POPF`, `INT`, port access) |
-| [Call gate](https://people.freebsd.org/~jhb/386htm/CALL.htm), same privilege | 52 + m | | `m` is a small adjustment defined in the manual. With more privilege and no parameters: 86 + m |
-| Hardware task switch | 300 (TSS to TSS) | | 217 into a V86 task. The reason the design switches tasks in software |
-| [Load a segment register](https://people.freebsd.org/~jhb/386htm/MOV.htm) | 18 (19 from memory) in protected mode | | 2 (5 from memory) in real and V86 mode. Matters for Candidate F and for kernel entry |
-| [`MOV` to CR3](https://flint.cs.yale.edu/cs422/readings/i386/MOVRS.htm) | 5 | | The instruction is cheap; the cost is the TLB refill afterwards, which the manual does not give. Measure it with a working set of 1, 8 and 32 pages |
-| [`IN` from a port](https://people.freebsd.org/~jhb/386htm/IN.htm), ring 0 or `CPL` ≤ `IOPL` | 6 (immediate port), 7 (port in `DX`) | | Real mode: 12 and 13 |
-| `IN` from a port, V86 mode or `CPL` > `IOPL` (I/O bitmap checked) | 26 and 27 | | Passthrough through the bitmap is not free: about double the real-mode count, before the bus cycle |
-| ISA bus cycle for a port access | Not in the manual | | Measure; the bus wait comes on top of the instruction count |
-| Page-table walk on a TLB miss | Not in the manual | | Measure, with and without the board's external cache |
-| IDE sector by programmed I/O, 16-bit and 32-bit | Not in the manual | | Measure on ISA and VLB; this is the CPU time of a disk transfer |
+| Primitive | 386 clocks (manual) | 486 clocks (table) | Measured | Notes |
+| --- | --- | --- | --- | --- |
+| [`INT n`](https://courses.cs.washington.edu/courses/cse451/24sp/resources/i386/INT.htm), same privilege | 59 | 44 | | Real mode: 37 on the 386, 30 on the 486. The table gives the 486 protected-mode cost as the range 44 to 71 without naming the cases; the low end is read as same privilege and the high end as an inner ring, by analogy with the 386 range of 59 to 99 |
+| `INT n` to an inner ring (ring 3 to 0) | 99 | 71 | | The system call path if it uses `INT`. See the note on the previous row |
+| `INT n` from V86 mode to ring 0 | 119 | Look up | | Start of every V86 trap |
+| [`IRET`](https://courses.cs.washington.edu/courses/cse451/24sp/resources/i386/IRET.htm), same privilege | 38 | Look up | | To an outer ring: 82 on the 386. `IRETD` back to V86: 60 on the 386. Real mode: 22 on the 386, 15 on the 486 |
+| V86 trap round trip | 179 plus the emulation code | Look up | | 119 + 60 from the rows above; the handler adds decode and emulation, so measure it per instruction type (`CLI`, `STI`, `PUSHF`, `POPF`, `INT`, port access) |
+| [Call gate](https://people.freebsd.org/~jhb/386htm/CALL.htm), same privilege | 52 + m | Look up | | `m` is a small adjustment defined in the manual. With more privilege and no parameters: 86 + m on the 386 |
+| Hardware task switch | 300 (TSS to TSS) | Look up | | 217 into a V86 task on the 386. The reason the design switches tasks in software |
+| [Load a segment register](https://people.freebsd.org/~jhb/386htm/MOV.htm) | 18 (19 from memory) in protected mode | 9 | | Real and V86 mode: 2 (5 from memory) on the 386, 3 on the 486. Add 8 for a new descriptor and 6 for `SS`. Matters for Candidate F and for kernel entry |
+| [`MOV` to CR3](https://flint.cs.yale.edu/cs422/readings/i386/MOVRS.htm) | 5 | Look up | | The instruction is cheap; the cost is the TLB refill afterwards, which neither manual gives. Measure it with a working set of 1, 8 and 32 pages. The 486 table lists 4 or 16 for control registers without saying which is CR3 |
+| [`IN` from a port](https://people.freebsd.org/~jhb/386htm/IN.htm), ring 0 or `CPL` ≤ `IOPL` | 6 (immediate port), 7 (port in `DX`) | 9 and 8 | | Real mode: 12 and 13 on the 386, 14 and 14 on the 486. The 486 is slower than the 386 at port access |
+| `IN` from a port, V86 mode or `CPL` > `IOPL` (I/O bitmap checked) | 26 and 27 | `CPL` > `IOPL`: 29 and 28. V86: 27 and 27 | | Passthrough through the bitmap is not free: three to four times the ring 0 count, before the bus cycle |
+| ISA bus cycle for a port access | Not in the manual | Not in the manual | Measure | The bus wait comes on top of the instruction count |
+| Page-table walk on a TLB miss | Not in the manual | Not in the manual | Measure | With and without the board's external cache |
+| IDE sector by programmed I/O, 16-bit and 32-bit | Not in the manual | Not in the manual | Measure | Measure on ISA and VLB; this is the CPU time of a disk transfer |
 
-The 486 column is to look up in the i486 Programmer's Reference Manual and add before the measurements run.
+The 486 cells marked "Look up" are still to find in the Intel i486 Programmer's Reference Manual (the 1992 edition is on bitsavers). The 486 cache and pipeline make its counts less predictable than the 386's, so the measured column matters more there.
 
 ### Strict C
 
