@@ -402,6 +402,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 **References**
 
 - Jochen Liedtke, "On µ-Kernel Construction" (1995) and "Improving IPC by Kernel Design" (1993); Härtig et al., "The Performance of µ-Kernel-Based Systems" (1997); Engler et al., "Exokernel" (1995).
+- How the CPU shapes OS costs: Anderson, Levy, Bershad and Lazowska, [The Interaction of Architecture and Operating System Design](https://homes.cs.washington.edu/~tom/pubs/interaction.html) (ASPLOS, 1991); Ousterhout, [Why Aren't Operating Systems Getting Faster As Fast As Hardware?](https://web.stanford.edu/~ouster/cgi-bin/papers/osfaster.pdf) (USENIX, 1990); Hennessy and Patterson, *Computer Architecture: A Quantitative Approach*; Abrash, *Zen of Assembly Language* (timing from the 8086 to the 486). The instruction clock counts are in the Intel 80386 and i486 Programmer's Reference Manuals.
 - Andrew Tanenbaum, *Operating Systems: Design and Implementation*, and the 1992 Tanenbaum–Torvalds debate on comp.os.minix.
 - Intel 80386, 387 and i486 Programmer's Reference Manuals; the EXP3406 jumper manual and OPTi 82C495SLC brochure; the OSDev wiki.
 - Microsoft DPMI 0.9 specification; Windows 3.1 DDK; Ralf Brown's Interrupt List.
