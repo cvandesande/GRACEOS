@@ -95,6 +95,29 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 | V86 mode extensions (VME) | No | No | DOS code traps on CLI, STI, PUSHF, POPF, INT unless IOPL=3 |
 | Fast system call instruction | No | No | Use INT or call gates |
 
+### Cost model (Proposed)
+
+What the CPU says each primitive costs, so decisions rest on numbers and not on feel. The clock counts are from the Intel 80386 Programmer's Reference Manual; they assume no wait states and a cache hit, so they are best cases. "Measured" is filled in during phase 2 on the 386DX and the 486. Where the manual has no number, the cell says what to measure.
+
+| Primitive | 386 clocks (manual) | Measured | Notes |
+| --- | --- | --- | --- |
+| [`INT n`](https://courses.cs.washington.edu/courses/cse451/24sp/resources/i386/INT.htm), same privilege | 59 | | Real mode: 37 |
+| `INT n` to an inner ring (ring 3 to 0) | 99 | | The system call path if it uses `INT` |
+| `INT n` from V86 mode to ring 0 | 119 | | Start of every V86 trap |
+| [`IRET`](https://courses.cs.washington.edu/courses/cse451/24sp/resources/i386/IRET.htm), same privilege | 38 | | To an outer ring: 82. `IRETD` back to V86: 60 |
+| V86 trap round trip | 179 plus the emulation code | | 119 + 60 from the rows above; the handler adds decode and emulation, so measure it per instruction type (`CLI`, `STI`, `PUSHF`, `POPF`, `INT`, port access) |
+| [Call gate](https://people.freebsd.org/~jhb/386htm/CALL.htm), same privilege | 52 + m | | `m` is a small adjustment defined in the manual. With more privilege and no parameters: 86 + m |
+| Hardware task switch | 300 (TSS to TSS) | | 217 into a V86 task. The reason the design switches tasks in software |
+| [Load a segment register](https://people.freebsd.org/~jhb/386htm/MOV.htm) | 18 (19 from memory) in protected mode | | 2 (5 from memory) in real and V86 mode. Matters for Candidate F and for kernel entry |
+| [`MOV` to CR3](https://flint.cs.yale.edu/cs422/readings/i386/MOVRS.htm) | 5 | | The instruction is cheap; the cost is the TLB refill afterwards, which the manual does not give. Measure it with a working set of 1, 8 and 32 pages |
+| [`IN` from a port](https://people.freebsd.org/~jhb/386htm/IN.htm), ring 0 or `CPL` ≤ `IOPL` | 6 (immediate port), 7 (port in `DX`) | | Real mode: 12 and 13 |
+| `IN` from a port, V86 mode or `CPL` > `IOPL` (I/O bitmap checked) | 26 and 27 | | Passthrough through the bitmap is not free: about double the real-mode count, before the bus cycle |
+| ISA bus cycle for a port access | Not in the manual | | Measure; the bus wait comes on top of the instruction count |
+| Page-table walk on a TLB miss | Not in the manual | | Measure, with and without the board's external cache |
+| IDE sector by programmed I/O, 16-bit and 32-bit | Not in the manual | | Measure on ISA and VLB; this is the CPU time of a disk transfer |
+
+The 486 column is to look up in the i486 Programmer's Reference Manual and add before the measurements run.
+
 ### Strict C
 
 - `-std=c11 -pedantic -ffreestanding -nostdlib -Werror`, with the strictest warning set for each compiler: an explicit GCC list plus `-fanalyzer`, and Clang's `-Weverything` minus the exclusions listed in the `Makefile`.
@@ -361,7 +384,7 @@ Each phase ends with a test that must pass. Experiment results from each phase g
 1. **Toolchain and boot**: cross-compiler, boot loader, protected mode, serial console, boot messages with the dedication.
    - Gate: boot messages over serial in QEMU and on the real 386DX.
 2. **Kernel core and measurement harness**: paging, threads, IPC, interrupts, CPU and FPU detection, timer-based benchmarks.
-   - Gate: IPC round-trip time measured on the 386DX; first comparison of candidates A, B and F, and of the request ring against the synchronous baseline. The memory model is settled before the system call and IPC code is written.
+   - Gate: the "Measured" column of the cost model filled in on the 386DX; IPC round-trip time measured on the 386DX; first comparison of candidates A, B and F, and of the request ring against the synchronous baseline. The memory model is settled before the system call and IPC code is written.
 3. **First services, switchable in or out of the kernel**: disk and filesystem (ext3 at ext2 level), console.
    - Gate: files written to an ext3 image pass `e2fsck`; filesystem call cost measured inside and outside the kernel.
 4. **First DOS machine**: MS-DOS 4.0 in V86 mode, foreground pass-through with trapped controllers, EMS, the INT 21h tracer.
