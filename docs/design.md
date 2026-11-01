@@ -43,6 +43,8 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 
 **Other architectures: Decided (2026-11-01)**: the kernel begins with x86 and is designed so that other architectures can follow as a learning exercise. Code that only makes sense on x86 (V86 mode, segments, the PC chipset) sits behind small interfaces where it would otherwise leak into shared code, and the interfaces are added as the x86 code is written, not later. No second architecture is planned yet, and the DOS and Windows personalities stay x86 by nature.
 
+**Small kernel: Decided (2026-11-01)**: the kernel footprint is kept as small as possible, with no size budget, until shrinking it further costs more than it saves, in clarity or in measured speed. This helps on a 2MB 386 and on small devices such as an ESP32 if the kernel is ported there. Code size is compared with `-Os` and `-O2` as the code lands.
+
 **Non-goals**
 
 - Making CPU-bound code faster than the bare CPU.
@@ -481,6 +483,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-11-01 | `graceutils` gets a process viewer: `ps`, then `top`, then possibly an htop-style viewer, as one program that gains features in that order. All three read one batched request for process records (CPU ticks from the 8254). The htop-style part is decided once `top` works |
 | 2026-11-01 | Architecture boundary: address space switching is one operation, and user pointers are a distinct type used only through functions, so the memory model (flat, or Candidate F on x86) and other architectures stay behind those two things. This is a narrow exception to the 2026-10-28 entry that allowed no portability layer before a second architecture exists; everything else stays unabstracted until then |
 | 2026-11-01 | Portability to other architectures becomes a goal, with x86 first. Architecture-specific code is put behind small interfaces as the x86 code is written, instead of waiting for a second architecture. This supersedes the 2026-10-28 stance (not a goal, no abstraction layer before a second architecture) and the "everything else stays unabstracted" part of the entry above. No second architecture is planned, and the DOS and Windows personalities stay x86 |
+| 2026-11-01 | A very small kernel footprint is a design goal, with no numeric budget: as small as possible until further shrinking costs more than it saves |
 
 ## Glossary
 
