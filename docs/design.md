@@ -43,7 +43,7 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 
 **Other architectures: Decided (2026-11-01)**: the kernel begins with x86 and is designed so that other architectures can follow as a learning exercise. Code that only makes sense on x86 (V86 mode, segments, the PC chipset) sits behind small interfaces where it would otherwise leak into shared code, and the interfaces are added as the x86 code is written, not later. No second architecture is planned yet, and the DOS and Windows personalities stay x86 by nature.
 
-**Small kernel: Decided (2026-11-01)**: the kernel footprint is kept as small as possible, with no size budget, until shrinking it further costs more than it saves, in clarity or in measured speed. This helps on a 2MB 386 and on small devices such as an ESP32 if the kernel is ported there. Code size is compared with `-Os` and `-O2` as the code lands.
+**Small kernel: Decided (2026-11-01)**: the kernel footprint is kept as small as possible, with no size budget, until shrinking it further costs more than it saves, in clarity or in measured speed. This helps on a 386 with little RAM and on small devices such as an ESP32 if the kernel is ported there. Code size is compared with `-Os` and `-O2` as the code lands.
 
 **Non-goals**
 
@@ -69,7 +69,7 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 | Debugging | Serial console on COM1 and port 80h progress codes from day one | Both work before anything else does |
 | Development | NixOS flake dev shell; QEMU and 86Box before real hardware | Reproducible toolchain |
 | Dedication | Andrew Tanenbaum and Linus Torvalds, printed in the boot messages | Their 1992 debate is the question this project tests |
-| Design principle | Code need not be perfect, but it must be simple and easy to read. Small designs with few options: no configurability, abstraction layers or negotiation until a measurement or a concrete need justifies them | Simple code can be read and audited end to end, and fixed choices leave nothing to misconfigure; imperfect code that is easy to read can be fixed, while clever code cannot. WireGuard, a few thousand lines with one fixed set of cryptographic primitives, is the model. The experiment harness is the deliberate exception, since it exists to measure |
+| Design principle | Code need not be perfect, but it must be simple and easy to read. Small designs with few options: no configurability, abstraction layers or negotiation until a measurement or a concrete need justifies them | Simple code can be read and audited end to end, and fixed choices leave nothing to misconfigure; imperfect code that is easy to read can be fixed, while clever code cannot. WireGuard, a few thousand lines with one fixed set of cryptographic primitives, is the model. The experiment harness is a deliberate exception, since it exists to measure, and so are the small interfaces that keep architecture-specific code out of shared code (see "Other architectures") |
 
 ### Target hardware
 
@@ -79,7 +79,7 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 | Bus speeds | 25, 33, 40 or 50MHz |
 | Slots | 2 × 32-bit VLB, 7 × 16-bit ISA |
 | External cache | 256KB fitted, write-back |
-| RAM | Up to 64MB in 30-pin SIMMs, in banks of four; 16MB is the development target |
+| RAM | Up to 64MB in 30-pin SIMMs, in banks of four; 8MB to 16MB is the development target, which is realistic for the period |
 
 - **Cards**: VLB video card and VLB IDE controller (ideally multi-I/O); ISA Sound Blaster, NE2000-compatible or 3Com 3C509 network card, joystick port.
 - **Board notes**: the clock battery is a non-rechargeable lithium cell, so check the board doesn't try to charge it, or move to an external battery with a blocking diode. Clean and continuity-test the scraped traces between the 386 socket and the chipset before first power-on. With both VLB slots in use at 40MHz or above, check stability. Keep DMA buffers below 16MB and check the BIOS cache settings, since the write-back cache needs care with DMA.
@@ -249,7 +249,7 @@ This is the first architecture to test (see the Decisions table); the details be
 
 ### Fast paths for user-level services
 
-Ways to keep the common case out of the IPC path for services that run outside the kernel, such as the pager, the filesystem and a network stack. On a cacheless 386 an avoided copy matters most, so zero-copy buffers and the pager fast path come first; the rest wait for a measurement.
+Ways to keep the common case out of the IPC path for services that run outside the kernel, such as the pager, the filesystem and a network stack. On a 386, which has no on-chip cache, an avoided copy matters most, so zero-copy buffers and the pager fast path come first; the rest wait for a measurement.
 
 - **Zero-copy shared buffers**: client and server map the same pages, and only a short message moves between them.
 - **Pager fast path**: the kernel keeps the page tables and the resident pages and calls the user-level pager only on a fault for a page that is not in memory.
@@ -352,7 +352,7 @@ Risks: if the filesystem server runs below the priority of the waiting game, the
 - **Interface**: a POSIX subset implemented by our own C library on top of our services, with the request rings underneath. Programs are recompiled against it. Calls are added as target programs need them; an unimplemented call returns `ENOSYS` and is logged.
 - **Batching in the interface**: POSIX already has batch calls (`lio_listio`, `readv`, `writev`), and the library can add native calls where POSIX has none, such as listing a directory with its attributes in one request.
 - **What a target program needs**: `fork` (copy-on-write page tables) and `exec`, pipes, signals, terminal I/O (`termios`) and pseudo-terminals, and for some programs `select` or `mmap`. Networking is out of scope for now.
-- **Where the programs come from: Decided (2026-11-01)**: we write our own `graceutils` first, starting with a shell and `ls`, `cp`, `mv`, `rm`, `mkdir` and `cat`, so that they are built for the rings from the start. Compatibility with BSD and Linux utilities is looked at once we are happy with ours. The 4.4BSD-Lite lineage of userland, as carried on in NetBSD and FreeBSD, stays the era-appropriate and BSD-licensed source for that later step (NetBSD's `sh`, `less`, an editor, `make`). Check the licence header of every imported file. GPL programs such as BusyBox and htop are not shipped. Later, our own process viewer could show DOS machines and services as processes.
+- **Where the programs come from: Decided (2026-11-01)**: we write our own `graceutils` first, starting with a shell and `ls`, `cp`, `mv`, `rm`, `mkdir` and `cat`, so that they are built for the rings from the start. Compatibility with BSD and Linux utilities is looked at once we are happy with ours. The 4.4BSD-Lite lineage of userland, as carried on in NetBSD and FreeBSD, stays the era-appropriate and BSD-licensed source for that later step (NetBSD's `sh`, `less`, an editor, `make`). Check the licence header of every imported file. GPL programs such as BusyBox and htop are not shipped.
 - **Name: Decided (2026-11-01)**: the base utilities (shell, file tools, process tools and serial tools) are called `graceutils`, in lowercase. Programs imported later from BSD stay a separate set, outside `graceutils`.
 - **Shell scope: Decided (2026-11-01)**: the first `graceutils` shell does what MS-DOS's `COMMAND.COM` does and no more. It runs programs by name along a `PATH`, has built-in `cd` and a few more commands, has environment variables, redirects with `<` and `>`, and joins programs with `|` (through real pipes or rings, not the temporary files DOS used). Scripts get only simple `if`, `for` and `goto`-style control. The full POSIX shell language (quoting and expansion rules, functions, here-documents, job control) waits until a program or script needs it.
 - **Process viewer: Decided (2026-11-01)**: `graceutils` gets `ps`, then `top`, then possibly an htop-style viewer, built as one program that gains features in that order. The htop-style part (cursor addressing, colour, a selectable list, `kill` from the screen) is decided once `top` works. All three read one request that returns a batch of process records on the rings (name, state, CPU ticks counted from the 8254 timer, memory). Later the viewer can list DOS machines and services as processes.
@@ -402,7 +402,7 @@ Each phase ends with a test that must pass. Experiment results from each phase g
    - Gate: X-Wing at full speed with sound and joystick on the real 386DX.
 5. **Multiple DOS machines**: device virtualization, console switching, redirected drives, snapshot cloning, idle detection, DPMI host.
    - Gate: two DOS sessions switch with Alt+F keys, the background one keeps running, and a DPMI program runs.
-6. **POSIX personality**: executable loader, a POSIX subset in our own C library, basic `/dev`, NetBSD's `sh` and file tools.
+6. **POSIX personality**: executable loader, a POSIX subset in our own C library, basic `/dev`, and `graceutils` (our own shell, file tools and process viewer).
    - Gate: our shell manages files on ext3 alongside a running DOS session.
 7. **Filesystem hardening**: journal replay, ordered-mode journaling, the block cache.
    - Gate: a crash during heavy file activity recovers at the next boot without `e2fsck`.
@@ -420,7 +420,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 **Tools**
 
 - Compilers: GCC built for the 386 (`i686-elf` target with `--with-arch=i386`), NASM, and later Open Watcom for 16-bit pieces.
-- Userland: a C library of our own or a BSD libc (open), plus NetBSD's `sh` and file tools; static linking first.
+- Userland: a C library of our own or a BSD libc (open), plus our own `graceutils`, with NetBSD's `sh` and file tools only for a later compatibility step; static linking first.
 - Emulators: QEMU (with GDB), 86Box (a 386DX VLB machine with a POST card), DOSBox-X's debugger for DOS behaviour.
 - Disk images: `mkfs.ext3`, `e2fsck`, `mkfs.fat`, `mtools`.
 - Measurement: 8254 timer-based timing, port 80h codes on the POST card, the IPC tracer.
@@ -429,7 +429,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 **Test programs**
 
 - DOS: X-Wing (EMS, Sound Blaster, joystick), a text-mode app, a DPMI program, a Mode X demo.
-- POSIX: NetBSD's shell and file tools; later a process viewer.
+- POSIX: `graceutils` (shell, file tools, process viewer).
 - Windows: Program Manager and the stock apps, in Standard then Enhanced mode.
 - Benchmarks: the hypotheses table above, on each CPU configuration.
 
