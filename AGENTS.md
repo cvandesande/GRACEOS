@@ -95,6 +95,7 @@ Strictness is for correctness. If a rule here makes a tier 1 function harder to 
 - Measure before tuning. Hot paths (IPC fast path, context switch, interrupt entry, V86 traps) are hand-written NASM, and each has a plain C version with the same behaviour. A host test runs both on random inputs and compares the results.
 - Compare `-Os` with `-O2` and `-mtune=i386` with `-mtune=i486` by measurement. The 386 has no on-chip cache, so code size and where hot code and data sit in memory may matter more than clever scheduling. Measure with the board's external cache on and off.
 - Keep `ASSERT` off hot paths. Everything else here costs nothing at run time.
+- User experience comes before the fewest clocks (see "User experience first" in `docs/design.md`). When reviewing a change or a benchmark, weigh the experience measures (delay from key to screen, sound underruns, load times, frame pacing) as well as raw timings.
 - When quoting a benchmark, say which compiler built the code.
 
 ### Era compiler check
