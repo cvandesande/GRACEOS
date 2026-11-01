@@ -41,6 +41,8 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 
 **Stretch goal**: the same kernel running on a 386SX. Until then, no decision may rule it out (see the 386SX row under Decisions).
 
+**User experience first: Decided (2026-11-01)**: when a choice trades fewer clocks against a better experience for the person using the machine, the experience wins: input that responds at once, smooth sound and animation, and short waits. Clock counts and benchmarks are tools for finding what costs the user something; a saving nobody would notice is not worth extra complexity. Benchmarks therefore include experience measures (delay from key to screen, sound underruns, level load time, frame pacing) next to raw timings.
+
 **Other architectures: Decided (2026-11-01)**: the kernel begins with x86 and is designed so that other architectures can follow as a learning exercise. Code that only makes sense on x86 (V86 mode, segments, the PC chipset) sits behind small interfaces where it would otherwise leak into shared code, and the interfaces are added as the x86 code is written, not later. No second architecture is planned yet, and the DOS and Windows personalities stay x86 by nature.
 
 **Small kernel: Decided (2026-11-01)**: the kernel footprint is kept as small as possible, with no size budget, until shrinking it further costs more than it saves, in clarity or in measured speed. This helps on a 386 with little RAM and on small devices such as an ESP32 if the kernel is ported there. Code size is compared with `-Os` and `-O2` as the code lands.
@@ -99,7 +101,7 @@ A hybrid kernel for a 386 PC that runs POSIX (Unix) programs, DOS and Windows 3.
 
 ### Cost model (Proposed)
 
-What the CPU says each primitive costs, so decisions rest on numbers and not on feel. The 386 clock counts are from the Intel 80386 Programmer's Reference Manual. The 486 clock counts are from the [Intel486 Processor Programmer's Reference Manual, 1992](https://ftp.mirrorservice.org/sites/www.bitsavers.org/components/intel/80486/1992_Intel_486_Programmers_Reference_Manual.pdf), chapter 26, read from the page images (the PDF's text layer has misread digits). Counts assume no wait states, a cache hit and a TLB hit, so they are best cases. "Measured" is filled in during phase 2 on the 386DX and the 486. Where the manual has no number, the cell says "Measure".
+What the CPU says each primitive costs, so we can see where time goes. The numbers serve the user experience (see "User experience first" under Goal): they show what a choice costs, and the experience decides whether that cost is worth paying. The 386 clock counts are from the Intel 80386 Programmer's Reference Manual. The 486 clock counts are from the [Intel486 Processor Programmer's Reference Manual, 1992](https://ftp.mirrorservice.org/sites/www.bitsavers.org/components/intel/80486/1992_Intel_486_Programmers_Reference_Manual.pdf), chapter 26, read from the page images (the PDF's text layer has misread digits). Counts assume no wait states, a cache hit and a TLB hit, so they are best cases. "Measured" is filled in during phase 2 on the 386DX and the 486. Where the manual has no number, the cell says "Measure".
 
 | Primitive | 386 clocks (manual) | 486 clocks (manual) | Measured | Notes |
 | --- | --- | --- | --- | --- |
@@ -486,6 +488,7 @@ The "step aside" mode for stock Windows can be added any time after phase 4.
 | 2026-11-01 | Portability to other architectures becomes a goal, with x86 first. Architecture-specific code is put behind small interfaces as the x86 code is written, instead of waiting for a second architecture. This supersedes the 2026-10-28 stance (not a goal, no abstraction layer before a second architecture) and the "everything else stays unabstracted" part of the entry above. No second architecture is planned, and the DOS and Windows personalities stay x86 |
 | 2026-11-01 | A very small kernel footprint is a design goal, with no numeric budget: as small as possible until further shrinking costs more than it saves |
 | 2026-11-01 | The default view of the process viewer is a CPU panel: instruction-group tiles that flash by how often sampling finds those instructions running. It extends the process viewer entry of the same day, whose process list becomes the second view. The kernel needs a timer-driven sampling hook that records the interrupted `CS:EIP` |
+| 2026-11-01 | User experience comes before the fewest clocks. When a choice trades the two, the better experience wins; clock counts and benchmarks show what costs the user something, and experience measures (key-to-screen delay, sound underruns, load times, frame pacing) sit next to raw timings. This changes the intent of the cost model, which was meant to ground decisions in numbers and not in feel |
 
 ## Glossary
 
