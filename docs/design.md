@@ -145,6 +145,8 @@ Flight-software style: the code fails loudly and early, and never silently. Thes
 - **No dynamic allocation outside the memory manager**: fixed-size tables and pools.
 - **Assertions**: `ASSERT` is always on. On failure it prints file, line and condition to COM1, writes `0xEE` to port 80h, disables interrupts and halts. `DEBUG_ASSERT` is compiled out of release builds and is for hot paths.
 - **Hot paths**: IPC fast path, context switch, interrupt entry and V86 traps are hand-written NASM, and each has a plain C version with the same behaviour. A host test runs both on random inputs and compares the results.
+- **Worst-case analysis (Proposed)**: because tier 1 code has no recursion and bounded loops, every path through it has a computable worst case. A script sums the compiler's per-function stack usage (`-fstack-usage`) along the call graph and the build fails if a path exceeds the stack it gets. Hot paths (IPC fast path, interrupt entry, context switch, V86 traps) also get a worst-case time in clocks, from the manual's counts and then from 8254 measurements on the 386DX, recorded in the cost model.
+- **Test coverage (Proposed)**: host tests exercise every error path of tier 1 and tier 2 code, using fault injection (making a disk read, a pool or a request fail on purpose), and coverage is measured with `gcov`, with every untested branch listed.
 
 Strictness depends on the tier, because it is there for correctness. If a rule makes a tier 1 function harder to read, say so instead of working around it.
 
