@@ -145,8 +145,8 @@ Flight-software style: the code fails loudly and early, and never silently. Thes
 - **No dynamic allocation outside the memory manager**: fixed-size tables and pools.
 - **Assertions**: `ASSERT` is always on. On failure it prints file, line and condition to COM1, writes `0xEE` to port 80h, disables interrupts and halts. `DEBUG_ASSERT` is compiled out of release builds and is for hot paths.
 - **Hot paths**: IPC fast path, context switch, interrupt entry and V86 traps are hand-written NASM, and each has a plain C version with the same behaviour. A host test runs both on random inputs and compares the results.
-- **Worst-case analysis (Proposed)**: because tier 1 code has no recursion and bounded loops, every path through it has a computable worst case. A script sums the compiler's per-function stack usage (`-fstack-usage`) along the call graph and the build fails if a path exceeds the stack it gets. Hot paths (IPC fast path, interrupt entry, context switch, V86 traps) also get a worst-case time in clocks, from the manual's counts and then from 8254 measurements on the 386DX, recorded in the cost model.
-- **Test coverage (Proposed)**: host tests exercise every error path of tier 1 and tier 2 code, using fault injection (making a disk read, a pool or a request fail on purpose), and coverage is measured with `gcov`, with every untested branch listed.
+- **Worst-case analysis (Proposed)**: because tier 1 code has no recursion and bounded loops, every path through it has a computable worst case. A script sums the compiler's per-function stack usage (`-fstack-usage`) along the call graph and the build fails if a path exceeds the stack it gets. Hot paths (IPC fast path, interrupt entry, context switch, V86 traps) also get a worst-case time in clocks, from the manual's counts and then from 8254 measurements on the 386DX, recorded in the cost model. Enforcement: the stack check is a `make` target run by the pre-commit hook, like `make check386`, and calls through function pointers (`cpu_operations`, ring handlers) need a list of the possible targets for each pointer. The time bounds are checked at the phase 2 gate on the real 386DX, because QEMU is not cycle-accurate.
+- **Test coverage (Proposed)**: host tests exercise every error path of tier 1 and tier 2 code, using fault injection (making a disk read, a pool or a request fail on purpose), and coverage is measured with `gcov`, with every untested branch listed. Enforcement: a `make` target runs the host tests and fails if the coverage of tier 1 and tier 2 code drops below a committed baseline (a ratchet, with no arbitrary target), and the pre-commit hook runs it when kernel logic changes. This needs a host test harness with fault injection, which does not exist yet and is the first thing to build.
 
 Strictness depends on the tier, because it is there for correctness. If a rule makes a tier 1 function harder to read, say so instead of working around it.
 
@@ -397,7 +397,7 @@ A 16-bit Windows terminal app (Open Watcom), a POSIX pseudo-terminal with our sh
 
 ## Build plan (Proposed)
 
-Each phase ends with a test that must pass. Experiment results from each phase go into the decision log.
+Each phase ends with a test that must pass. Experiment results from each phase go into the decision log. Since there is no CI, the full set of checks (the builds, `check386`, the stack check, and the host tests with coverage) is run before a gate is tagged.
 
 1. **Toolchain and boot**: cross-compiler, boot loader, protected mode, serial console, boot messages with the dedication.
    - Gate: boot messages over serial in QEMU and on the real 386DX.
